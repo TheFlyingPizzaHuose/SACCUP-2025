@@ -15,9 +15,9 @@ Yaw: Local X
 
 Try to use radians in computation, covert deg inputs to rad
 '''
-debug = True
-print("Debug Mode: " + str(debug))
 
+debug = True #True: Output is not performed
+print("Debug Mode: " + str(debug))
 datas = [] 
 #0       1     2     3         4          5     
 #airSim, wind, temp, humitidy, transform, thrust
@@ -36,9 +36,10 @@ for i in dataFiles:
         datas.append(pd.read_csv(i))
         if len(list(datas[fileDict[i]].iloc[:,0])) == 0: 
             sucessImport = False
-            print("ERROR: Could not find file or data from " + i)
+            print("ERROR: Could not find data from " + i)
     except:
-        print("ERROR: Could not find file or data from " + i)
+        print("ERROR: Could not find file " + i)
+        sucessImport = False
 
 #find output files and create new one
 fileExists = True
@@ -60,6 +61,7 @@ def calcAoA(orientation, velocity, windDirection, windSpeed):
     airVector = windVector+velocity
     angle = np.dot(orientation,airVector)/(np.linalg.norm(orientation)*np.linalg.norm(airVector))
     return angle
+#end calcAoa
 
 def seekData(fileName, input, outputNum=1):#given an input, lookup the output in the csv and interpolate
     data = datas[fileDict[fileName]]
@@ -85,6 +87,7 @@ def seekData(fileName, input, outputNum=1):#given an input, lookup the output in
             outputs = list(data.iloc[:,1+i])
             result.append(outputs[index-sign]*ratio + (1-ratio)*outputs[index])
     return result if len(result)>1 else result[0]
+#end seekData
 
 def rotate(rotation, eulerChange, dt):
     newFwd = rotation[0]
@@ -98,10 +101,55 @@ def rotate(rotation, eulerChange, dt):
     #perform yaw
     newFwd = np.cos(radChange[0])*newFwd - np.sin(radChange[0])*np.cross(newFwd,newUp)
     return [newFwd, newUp]
-dt = 0.0001 #delta T for simulation
+#end rotate
+
+def calcAero(angleOfAttack, velocity, rollAngle, outputLen): #WIP
+    data = datas[fileDict['airSim.csv']]
+    AoAs = list(data.iloc[:,0])
+    vels = list(data.iloc[:,1])
+    rolls = list(data.iloc[:,2])
+    input = np.array([angleOfAttack, velocity, rollAngle])
+
+    #calculate input's distance with known points
+    distances = []
+    for i in range(len(AoAs)):
+        point = np.array([AoAs[i],vels[i],rolls[i]])
+        distance = np.linalg.norm(point-input)
+        distances.append([distance,i])
+    distances = sorted(distances, key=lambda x: x[0]) #sorts by distances
+
+    #gets closest 8 points
+    points = []
+    for i in range(0,8):
+        index = distances[i][1]
+        points.append([AoAs[index],vels[index],rolls[index], index])
+    
+    #interpolate between all 8 values
+    points = sorted(points, key=lambda x: x[2]) #sorts by roll angle
+
+    points[0:4] = sorted(points[0:4], key=lambda x: x[1]) #sorts by vels
+    points[4:8] = sorted(points[4:8], key=lambda x: x[1]) #sorts by vels
+
+    points[0:2] = sorted(points[0:2], key=lambda x: x[0]) #sorts by AoA
+    points[2:4] = sorted(points[2:4], key=lambda x: x[0]) #sorts by AoA
+    points[4:6] = sorted(points[4:6], key=lambda x: x[0]) #sorts by AoA
+    points[6:8] = sorted(points[6:8], key=lambda x: x[0]) #sorts by AoA
+
+    print(points[1][0]-points[0][0])
+    print(points[2][1]-points[1][1])
+    print(points[4][2]-points[3][2])
+    ratios = [angleOfAttack
+
+    ]
+
+    return distances
+#end calcAero
+
+#calcAero(0.5,0.5,0.5)
 
 if sucessImport:
     #Simulation Variables
+    dt = 0.0001 #delta T for simulation
     pos = datas[4]['position'].values
     mass = float(datas[4]['mass'][0])
     tempOrient = datas[4]['orientation'].values #orientation in heading and rail tilt
@@ -110,13 +158,13 @@ if sucessImport:
     rotation = [np.array([0,0,1]), np.array([1,0,0])] #forwardLocal, upwardsLocal
     rotation = rotate(rotation, [0,0,tempOrient[0]], 1)#apply starting roll
     rotation = rotate(rotation, [0,tempOrient[0],0], 1)#apply starting pitch
-    print(seekData("thrust.csv",0))
+    #end Simulation Variables
+
     input("Press Enter to start simulation")
     lastPrint = t.monotonic()
     times = []
     heights = []
     while vel[2] >= 0:
-        #print(seekData("thrust.csv",time), time)
         vel+=(dt*seekData("thrust.csv",time)/mass)*rotation[0]-np.array([0,0,9.8*dt])#gravity and thrust
         pos+=vel*dt
         #print(pos)

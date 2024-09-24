@@ -8,6 +8,7 @@ SoftwareSerial rfSerial(2, 3);  // RX, TX
 // Define the baud rate for the RFD900
 #define RADIO_BAUD 57600
 
+// Create an instance of MPU6050
 MPU6050 mpu;
 
 void setup() {
@@ -17,17 +18,19 @@ void setup() {
   // Start the SoftwareSerial for RFD900
   rfSerial.begin(RADIO_BAUD);
   
-  // Initialize I2C communication and MPU-6050
+  // Initialize I2C communication
   Wire.begin();
+  
+  // Initialize MPU6050
   mpu.initialize();
   
   // Check if the MPU-6050 is connected properly
-  if (!mpu.testConnection()) {
+  if (mpu.testConnection()) {
+    Serial.println("MPU6050 connected!");
+  } else {
     Serial.println("MPU6050 connection failed!");
     while (1);  // Stop the program if the sensor isn't connected
   }
-  
-  Serial.println("MPU6050 connected!");
 }
 
 void loop() {
@@ -38,7 +41,7 @@ void loop() {
   mpu.getRotation(&gx, &gy, &gz);
   
   // Convert the raw gyro data to degrees/second
-  float gyroX = gx / 131.0;  // 131 LSB/°/s sensitivity
+  float gyroX = gx / 131.0;  // 131 LSB/°/s sensitivity for MPU-6050
   float gyroY = gy / 131.0;
   float gyroZ = gz / 131.0;
   
@@ -55,4 +58,3 @@ void loop() {
   // Small delay before the next reading
   delay(100);
 }
-

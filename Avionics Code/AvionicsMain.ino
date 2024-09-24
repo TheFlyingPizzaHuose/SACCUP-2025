@@ -1,41 +1,88 @@
-#include <SoftwareSerial.h> //UART Library
-#include <Wire.h> //I2C library
-#include <SPI.h> //SPI library
-#include <SD.h> //SD card library
-#include <Adafruit_BMP085.h> //BMP 085 or 180 pressure sensor library
-#include <Adafruit_MPU6050.h> //MPU6050 accelerometer sensor library
-#include <Adafruit_Sensor.h> //Adafruit unified sensor library
+#include <SoftwareSerial.h> // UART Library
+#include <Wire.h> // I2C library
+#include <SPI.h> // SPI library
+#include <SD.h> // SD card library
+#include <Adafruit_BMP085.h> // BMP 085 or 180 pressure sensor library
+#include <Adafruit_MPU6050.h> // MPU6050 accelerometer sensor library
+#include <Adafruit_Sensor.h> // Adafruit unified sensor library
+#include <Adafruit_LSM9DS1.h> // Include LSM9DS1 library
 
-SoftwareSerial mySerial(2, 3); // UART to RFD 900
+#define rfSerial Serial1
+
+// Create the sensor object
+Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1();
 
 void setup() {
   // Start hardware serial communication (for debugging)
   Serial.begin(9600);
   
   // Start RFD UART communication
-  mySerial.begin(57600);
+  rfSerial.begin(57600);
   Serial.println("Software serial initialized.");
+  
+  // Initialize LSM9DS1 sensor
+  if (!lsm.begin()) {
+    Serial.println("Failed to initialize LSM9DS1!");
+    while (1); // Stop if initialization fails
+  }
+  Serial.println("LSM9DS1 Found!");
+
+  // Setup sensor ranges
+  setupSensor();  // Added missing semicolon here
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  if (mySerial.available()) {
-    char incomingByte = mySerial.read();
-    Serial.print("Received: ");
-    Serial.println(incomingByte);
-  }
+  char incomingByte;
 
-  if (Serial.available()) {
-    char outgoingByte = Serial.read();
-    mySerial.print(outgoingByte);
+  if (Serial.available() > 0) {
+    incomingByte = Serial.read();
+    Serial.print(incomingByte);
+    rfSerial.print(incomingByte);
   }
+  if (rfSerial.available() > 0) {
+    incomingByte = rfSerial.read();
+    Serial.println(incomingByte);
+    rfSerial.print(incomingByte);
+  }
+  
+  // Read sensor data
+  sensors_event_t accel, gyro, mag, temp;
+  lsm.getEvent(&accel, &gyro, &mag, &temp);
+  
+  // Send data over RFD900 (via SoftwareSerial)
+  rfSerial.print("Accel X:"); rfSerial.print(accel.acceleration.x, 2); rfSerial.print(",");
+  rfSerial.print("Y:"); rfSerial.print(accel.acceleration.y, 2); rfSerial.print(",");
+  rfSerial.print("Z:"); rfSerial.print(accel.acceleration.z, 2); rfSerial.println(" m/s^2");
+
+  rfSerial.print("Gyro X:"); rfSerial.print(gyro.gyro.x, 2); rfSerial.print(",");
+  rfSerial.print("Y:"); rfSerial.print(gyro.gyro.y, 2); rfSerial.print(",");
+  rfSerial.print("Z:"); rfSerial.print(gyro.gyro.z, 2); rfSerial.println(" rad/s");
+
+  rfSerial.print("Mag X:"); rfSerial.print(mag.magnetic.x, 2); rfSerial.print(",");
+  rfSerial.print("Y:"); rfSerial.print(mag.magnetic.y, 2); rfSerial.print(",");
+  rfSerial.print("Z:"); rfSerial.print(mag.magnetic.z, 2); rfSerial.println(" gauss");
+
+  delay(1);
 }
 
-// Select I2C Bus On I2C Multiplexer
-void TCA9548A(uint8_t bus){
+// Select I2C Bus On I2C Multiplexer (if used)
+void TCA9548A(uint8_t bus) {
   Wire.beginTransmission(0x70);  // TCA9548A address
-  Wire.write(1 << bus);          // send byte to select bus
+  Wire.write(1 << bus);            // send byte to select bus
   Wire.endTransmission();
   Serial.print(bus);
 }
 
+void setupSensor() {
+  // 1.) Set accelerometer range:
+  lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_2G);
+  // Other ranges can be set as needed
+
+  // 2.) Set gyroscope range:
+  lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_245DPS);
+  // Other ranges can be set as needed
+
+  // 3.) Set magnetometer range:
+  lsm.setupMag(lsm.LSM9DS1_MAGGAIN_4GAUSS);
+  // Other gains can be set as needed
+}

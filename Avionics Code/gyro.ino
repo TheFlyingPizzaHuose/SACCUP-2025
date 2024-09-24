@@ -1,68 +1,58 @@
 #include <Wire.h>
-#include <Adafruit_Sensor.h>
-#include <Adafruit_LSM9DS1.h>
+#include <MPU6050.h>
+#include <SoftwareSerial.h>
 
-// Create the sensor object
-Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1();
+// Create a SoftwareSerial object for RFD900 communication
+SoftwareSerial rfSerial(2, 3);  // RX, TX
 
-// Define I2C addresses
-#define LSM9DS1_XG_ADDRESS 0x6B  // Accelerometer and Gyroscope address
-#define LSM9DS1_MAG_ADDRESS 0x1E // Magnetometer address
+// Define the baud rate for the RFD900
+#define RADIO_BAUD 57600
 
-void setupSensor() {
-  // 1.) Set accelerometer range:
-  lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_2G);
-  // lsm.LSM9DS1_ACCELRANGE_4G;
-  // lsm.LSM9DS1_ACCELRANGE_8G;
-  // lsm.LSM9DS1_ACCELRANGE_16G;
-
-  // 2.) Set gyroscope range:
-  lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_245DPS);
-  // lsm.LSM9DS1_GYROSCALE_500DPS;
-  // lsm.LSM9DS1_GYROSCALE_2000DPS;
-
-  // 3.) Set magnetometer range:
-  lsm.setupMag(lsm.LSM9DS1_MAGGAIN_4GAUSS);
-  // lsm.LSM9DS1_MAGGAIN_8GAUSS;
-  // lsm.LSM9DS1_MAGGAIN_12GAUSS;
-  // lsm.LSM9DS1_MAGGAIN_16GAUSS;
-}
+MPU6050 mpu;
 
 void setup() {
-  Serial.begin(115200);
+  // Start the serial monitor for debugging
+  Serial.begin(57600);
   
-  if (!lsm.begin()) {
-    Serial.println("Failed to initialize LSM9DS1!");
-    while (1);
+  // Start the SoftwareSerial for RFD900
+  rfSerial.begin(RADIO_BAUD);
+  
+  // Initialize I2C communication and MPU-6050
+  Wire.begin();
+  mpu.initialize();
+  
+  // Check if the MPU-6050 is connected properly
+  if (!mpu.testConnection()) {
+    Serial.println("MPU6050 connection failed!");
+    while (1);  // Stop the program if the sensor isn't connected
   }
-  Serial.println("LSM9DS1 Found!");
-
-  // Setup sensor ranges
-  setupSensor();
+  
+  Serial.println("MPU6050 connected!");
 }
 
 void loop() {
-  // Read and display accelerometer data
-  sensors_event_t accel, gyro, mag, temp;
-  lsm.getEvent(&accel, &gyro, &mag, &temp);
+  // Variables to hold raw gyroscope data
+  int16_t gx, gy, gz;
+  
+  // Get raw gyroscope data from MPU-6050
+  mpu.getRotation(&gx, &gy, &gz);
+  
+  // Convert the raw gyro data to degrees/second
+  float gyroX = gx / 131.0;  // 131 LSB/°/s sensitivity
+  float gyroY = gy / 131.0;
+  float gyroZ = gz / 131.0;
+  
+  // Print the gyro data to the Serial Monitor for debugging
+  Serial.print("Gyro X: "); Serial.print(gyroX);
+  Serial.print(" | Gyro Y: "); Serial.print(gyroY);
+  Serial.print(" | Gyro Z: "); Serial.println(gyroZ);
 
-  Serial.print("Accel X: "); Serial.print(accel.acceleration.x); Serial.print(" ");
-  Serial.print("Y: "); Serial.print(accel.acceleration.y); Serial.print(" ");
-  Serial.print("Z: "); Serial.print(accel.acceleration.z); Serial.println(" m/s^2");
+  // Send the gyro data via RFD900 in the format "X:gyroX,Y:gyroY,Z:gyroZ"
+  rfSerial.print("X:"); rfSerial.print(gyroX, 2);  // Sending X-axis with 2 decimal places
+  rfSerial.print(",Y:"); rfSerial.print(gyroY, 2);  // Sending Y-axis with 2 decimal places
+  rfSerial.print(",Z:"); rfSerial.println(gyroZ, 2);  // Sending Z-axis and end with newline
 
-  // Read and display gyroscope data
-  Serial.print("Gyro X: "); Serial.print(gyro.gyro.x); Serial.print(" ");
-  Serial.print("Y: "); Serial.print(gyro.gyro.y); Serial.print(" ");
-  Serial.print("Z: "); Serial.print(gyro.gyro.z); Serial.println(" rad/s");
-
-  // Read and display magnetometer data
-  Serial.print("Mag X: "); Serial.print(mag.magnetic.x); Serial.print(" ");
-  Serial.print("Y: "); Serial.print(mag.magnetic.y); Serial.print(" ");
-  Serial.print("Z: "); Serial.print(mag.magnetic.z); Serial.println(" gauss");
-
-  // Read and display temperature
-  Serial.print("Temperature: "); Serial.print(temp.temperature); Serial.println(" °C");
-
-  Serial.println();
-  delay(1000);  // Wait for 1 second before the next loop
+  // Small delay before the next reading
+  delay(100);
 }
+

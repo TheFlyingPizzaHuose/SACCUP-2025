@@ -9,8 +9,9 @@
 
 #define rfSerial Serial1
 
-// Create the sensor object
-Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1();
+// Create the sensor objects
+Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(); //Accelerometer
+Adafruit_BMP085 bmp; //Pitot Tube Pressure Sensor
 
 void setup() {
   // Start hardware serial communication (for debugging)
@@ -26,6 +27,12 @@ void setup() {
     while (1); // Stop if initialization fails
   }
   Serial.println("LSM9DS1 Found!");
+
+  if (!bmp.begin()) {
+	  Serial.println("Could not find a valid BMP085 sensor, check wiring!");
+	  while (1) {}
+  }
+  Serial.println("BMP180 Found!");
 
   // Setup sensor ranges
   setupSensor();  // Added missing semicolon here
@@ -50,19 +57,28 @@ void loop() {
   lsm.getEvent(&accel, &gyro, &mag, &temp);
   
   // Send data over RFD900 (via SoftwareSerial)
-  rfSerial.print("Accel X:"); rfSerial.print(accel.acceleration.x, 2); rfSerial.print(",");
-  rfSerial.print("Y:"); rfSerial.print(accel.acceleration.y, 2); rfSerial.print(",");
-  rfSerial.print("Z:"); rfSerial.print(accel.acceleration.z, 2); rfSerial.println(" m/s^2");
+  rfSerial.print("ACCEL "); rfSerial.print(accel.acceleration.x, 2); rfSerial.print(",");
+  rfSerial.print(accel.acceleration.y, 2); rfSerial.print(",");
+  rfSerial.print(accel.acceleration.z, 2);
 
-  rfSerial.print("Gyro X:"); rfSerial.print(gyro.gyro.x, 2); rfSerial.print(",");
-  rfSerial.print("Y:"); rfSerial.print(gyro.gyro.y, 2); rfSerial.print(",");
-  rfSerial.print("Z:"); rfSerial.print(gyro.gyro.z, 2); rfSerial.println(" rad/s");
+  rfSerial.print(" GYRO "); rfSerial.print(gyro.gyro.x, 2); rfSerial.print(",");
+  rfSerial.print(gyro.gyro.y, 2); rfSerial.print(",");
+  rfSerial.print(gyro.gyro.z, 2); rfSerial.print(" rad/s");
 
-  rfSerial.print("Mag X:"); rfSerial.print(mag.magnetic.x, 2); rfSerial.print(",");
-  rfSerial.print("Y:"); rfSerial.print(mag.magnetic.y, 2); rfSerial.print(",");
-  rfSerial.print("Z:"); rfSerial.print(mag.magnetic.z, 2); rfSerial.println(" gauss");
+  rfSerial.print(" MAG "); rfSerial.print(mag.magnetic.x, 2); rfSerial.print(",");
+  rfSerial.print(mag.magnetic.y, 2); rfSerial.print(",");
+  rfSerial.print(mag.magnetic.z, 2); rfSerial.print(" gauss");
 
-  delay(1);
+  rfSerial.print(" TEMP "); rfSerial.print(bmp.readTemperature()); rfSerial.print("C");
+  
+  rfSerial.print(" PRESS "); rfSerial.print(bmp.readPressure()); rfSerial.print("Pa");
+  
+  // Calculate altitude assuming 'standard' barometric
+  // pressure of 1013.25 millibar = 101325 Pascal
+  rfSerial.print(" ALT = "); rfSerial.print(bmp.readAltitude()); rfSerial.print("m");
+  rfSerial.println();
+
+  delay(50);
 }
 
 // Select I2C Bus On I2C Multiplexer (if used)

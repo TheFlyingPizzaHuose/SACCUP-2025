@@ -8,10 +8,25 @@
 #include <Adafruit_LSM9DS1.h> // Include LSM9DS1 library
 
 #define rfSerial Serial1
+#define gpsSerial Serial2
 
 // Create the sensor objects
 Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(); //Accelerometer
 Adafruit_BMP085 bmp; //Pitot Tube Pressure Sensor
+
+int bitLenthList[10] = {12,//Seconds since launch
+                        1, //Sender Ident
+                        12, //Altitude
+                        12, //Latitude
+                        12, //Lonitude
+                        9, //Velocity
+                        8, //OrientationX
+                        8, //OrientationY
+                        30, //Error Code Array
+                        8 //Checksum
+                        };//Represents the number of bits for each part of the data transmission
+
+int errorCodes[30] = {}; //Check https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/edit for error code list
 
 void setup() {
   // Start hardware serial communication (for debugging)
@@ -23,16 +38,12 @@ void setup() {
   
   // Initialize LSM9DS1 sensor
   if (!lsm.begin()) {
-    Serial.println("Failed to initialize LSM9DS1!");
-    while (1); // Stop if initialization fails
+    errorCodes[19] = 1;//Set error code if initialization fails
   }
-  Serial.println("LSM9DS1 Found!");
 
   if (!bmp.begin()) {
-	  Serial.println("Could not find a valid BMP085 sensor, check wiring!");
-	  while (1) {}
+    errorCodes[17] = 1;//Set error code if initialization fails
   }
-  Serial.println("BMP180 Found!");
 
   // Setup sensor ranges
   setupSensor();  // Added missing semicolon here

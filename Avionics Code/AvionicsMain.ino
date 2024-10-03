@@ -388,3 +388,23 @@ int* dec_to_binary(float my_dec, int my_bit){//Ellie McGshee, Returns elements i
   }
   return my_arr;
 }//dec_to_binary
+
+// ================================================Elizabeth McGhee
+int get_event_detection(float parameter){
+  float acceleration;
+  float g = 9.81;
+  int event_detection; //0 is liftoff, 1 is burnout, 2 is apogeee, and 3 is landed. 
+  
+  sensors_event_t accel, gyro, mag, temp;
+  lsm.getEvent(&accel, &gyro, &mag, &temp);
+
+  altitude = bmp.readAltitude();
+  acceleration = accel.acceleration.y;
+
+  if (altitude > 50.0 and acceleration > 2.0 * g){
+    event_detection = 0;
+  } else if (acceleration < g and altitude > parameter){
+    event_detection = 1;
+  } else if (altitude < 50.0){
+    evennt_detection = 3;
+}

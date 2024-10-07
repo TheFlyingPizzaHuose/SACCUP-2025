@@ -30,6 +30,8 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(); //Accelerometer
 Adafruit_BMP085 bmp; //Pitot Tube Pressure Sensor
 
+int gpsVersion = 2; //SAM-M8Q
+
 // AV Modes
 bool lowPower = 0;
 bool lowDataTransfer = 0;
@@ -83,7 +85,7 @@ int BMP280_RATE = 7,
     BMP180_1_RATE = 10,
     BMP180_2_RATE = 11,
     AS5600_1_RATE = 12,
-    AS5600_2_RATE = 13,
+    AS5600_2_RATE = 13;
 
 //Telemetry variables
 float time_since_launch = 0;//seconds
@@ -107,7 +109,7 @@ void setup() {
   if (!bmp.begin()) {setErr(BMP280_FAIL);}//Init BMP280 and error if fails
 
   // Setup sensor ranges
-  setupSensor();  // Added missing semicolon here
+  setupSensors();  // Added missing semicolon here
 }
 
 void loop() {
@@ -173,13 +175,13 @@ void setupSensors(){//Ryan Santiago
 
 //==========GPS CODE==========//Based on SparkyVT https://github.com/SparkyVT/HPR-Rocket-Flight-Computer/blob/V4_7_0/Main%20Code/UBLOX_GNSS_Config.ino
 bool initSAM_M8Q(){
-  gpsReady = 1
+  bool gpsReady = 1;
   gpsSerial.begin(9600);
   //Generate the configuration string for Factory Default Settings
   byte setDefaults[] = {0xB5, 0x62, 0x06, 0x09, 0x0D, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x17, 0x2F, 0xAE};
 
   Serial.print("Restoring Factory Defaults... ");
-  if(gpsSet(setDefaults) == 3){Serial.println("Restore Defaults Failed!")};
+  if(gpsSet(setDefaults) == 3){Serial.println("Restore Defaults Failed!");};
 
   //10Hz Max data rate for SAM-M8Q
   byte setDataRate[] = {0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0xFA, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x96};
@@ -205,9 +207,9 @@ bool initSAM_M8Q(){
   byte setSat[] = {0xB5, 0x62, 0x06, 0x3E, 0x0C, 0x00, 0x00, 0x00, 0x20, 0x01, 0x02, 0x04, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x82, 0x56};
 
   Serial.print("Deactivating NMEA GSA Messages... ");
-  if(gpsSet(setGSA) == 3){gpsReady = 0; Serial.println("NMEA GSA Message Deactivation Failed!"):}
+  if(gpsSet(setGSA) == 3){gpsReady = 0; Serial.println("NMEA GSA Message Deactivation Failed!");}
   Serial.print("Setting Nav Mode... ");
-  if(gpsSet(setNav) == 3){gpsReady = 0; Serial.println("Nav mode Failed!"):}
+  if(gpsSet(setNav) == 3){gpsReady = 0; Serial.println("Nav mode Failed!");}
   Serial.print("Deactivating NMEA GSV Messages... ");
   if(gpsSet(setGSV) == 3){gpsReady = 0; Serial.println("NMEA GSV Message Deactivation Failed!");}
   Serial.print("Setting 10Hz data rate... ");
@@ -224,19 +226,20 @@ bool initSAM_M8Q(){
   if(gpsSet(setGLL) == 3){gpsReady = 0; Serial.println("NMEA GLL Message Deactivation Failed!");}
   
   //Increase Baud-Rate on M8Q for faster GPS updates
-  setSucess = 0
+  int setSucess = 0;
   while(gpsVersion == 2 && setSucess < 3) {
     Serial.print("Setting Ublox Baud Rate 38400... ");
     sendUBX(setBaudRate, sizeof(setBaudRate));
     setSucess += getUBX_ACK(&setBaudRate[2]);}
   if (setSucess == 3 ){gpsReady = 0; Serial.println("Ublox Baud Rate 38400 Failed!");}
-  else if(gpsVersion == 2){
-    HWSERIAL->end();
-    HWSERIAL->flush();
-    HWSERIAL->begin(38400);}
+  if(gpsVersion == 2){
+    gpsSerial.end();
+    gpsSerial.flush();
+    gpsSerial.begin(38400);
+  }
   return gpsReady;
 }//end ConfigGPS
-int gpsSet(byte msg, char){
+int gpsSet(byte* msg){
   int gpsSetSuccess = 0;
   while(gpsSetSuccess < 3) {
       sendUBX(msg, sizeof(msg));
@@ -291,11 +294,11 @@ byte getUBX_ACK(byte *msgID) {
   if (msgID[0] == ackPacket[6] && msgID[1] == ackPacket[7] && CK_A == ackPacket[8] && CK_B == ackPacket[9]) {
     Serial.println("Success!");
     Serial.print("ACK Received! ");
-    printHex(ackPacket, sizeof(ackPacket));
+    //printHex(ackPacket, sizeof(ackPacket));
     return 10;}
   else {
     Serial.print("ACK Checksum Failure: ");
-    printHex(ackPacket, sizeof(ackPacket));
+    //printHex(ackPacket, sizeof(ackPacket));
     delay(1000);
     return 1;}
 }//end getACK
@@ -309,7 +312,7 @@ char* readyPacket(){//Combines telemetry into bit array then convert to char arr
   const int bitArrayLength = 104;
   const int charArrayLegnth = bitArrayLength/8;
   int bitArray[bitArrayLength] = {};
-  char charArray[]  {};
+  static char charArray[charArrayLegnth + 1]  {}; //+1 to include checksum byte, static so that the mem alloc is retained throughout the program
   int bitIndex = 0;
   if(lowDataTransfer){
     for(int i = 0; i < 10; i++){
@@ -319,7 +322,7 @@ char* readyPacket(){//Combines telemetry into bit array then convert to char arr
       }else if((i == 0) || (i > 1 && i < 8)){//Deal with floats
         float datum = 0;
         switch(i){
-          case 0;datum = time_since_launch;break;
+          case 0:datum = time_since_launch;break;
           case 2:datum = altitude;break;
           case 3:datum = latitude;break;
           case 4:datum = longitude;break;
@@ -327,20 +330,20 @@ char* readyPacket(){//Combines telemetry into bit array then convert to char arr
           case 6:datum = orientationX;break;
           case 7:datum = orientationY;break;
         }
-        int* bitsPtr = dev_to_binary(datum, dataLength);
+        int* bitsPtr = dec_to_binary(datum, dataLength);
         for(int x = 0; x < dataLength; x++){
           bitArray[bitIndex] = *(bitsPtr+dataLength-1-x);
           bitIndex++;
         }
       }else if(i == 8){//Deal with error codes and checksum
-        for(int x = 0, x < dataLength; x++){
+        for(int x = 0; x < dataLength; x++){
           bitArray[bitIndex] = errorCodes[x];
         }
       }else if(i == 9){
-        byte checksum = radioChecksum(bitArray, bitArrayLength);
+        charArray[charArrayLegnth-1] = radioChecksum(bitArray, bitArrayLength);
       }
     }
-    charIndex = 0;
+    int charIndex = 0;
     for(int i = 0; i < bitArrayLength; i+=8){
       char result = 0;
       result |= (bitArray[i] << 7); // Set bit 7
@@ -349,16 +352,16 @@ char* readyPacket(){//Combines telemetry into bit array then convert to char arr
       result |= (bitArray[i+3] << 4); // Set bit 4
       result |= (bitArray[i+4] << 3); // Set bit 3
       result |= (bitArray[i+5] << 2); // Set bit 2
-      result |= (bitArray[i+6]6 << 1); // Set bit 1
-      result |= (bitArray[i+7]7 << 0); // Set bit 0
+      result |= (bitArray[i+6] << 1); // Set bit 1
+      result |= (bitArray[i+7] << 0); // Set bit 0
       charArray[charIndex] = result;
       charIndex++;
     }
-    return charArray;
   }
+  return charArray;
 }
 byte radioChecksum(int *radioMSG, byte msgLength){
-  
+  return 0;
 }
 //==============================
 
@@ -390,21 +393,21 @@ int* dec_to_binary(float my_dec, int my_bit){//Ellie McGshee, Returns elements i
 }//dec_to_binary
 
 // ================================================Elizabeth McGhee
-bool detect_liftoff(){
+/*bool detect_liftoff(){
   if (altitude > 50.0 and accel.acceleration.y > 2*g){
     return 1;
 }else{
   return 0;}
-}
+}*/
 
-bool detect_burnout(){
+/*bool detect_burnout(){
   float dummy_variable = 0.3; //We don't know this yet
   float g = 9.81; 
   if (altitude > dummy_variables and accel.acceleration.y < g){
     return 1;
 } else {
     return 0;}
-}
+}*/
 
 bool detect_landing(){
   if (altitude < 50.0){

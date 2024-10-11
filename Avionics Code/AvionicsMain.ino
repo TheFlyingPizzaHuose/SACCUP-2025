@@ -11,7 +11,6 @@ is used in this program such as libraries.
 Avionics Datasheet
 https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/edit
 */
-
 #include <SoftwareSerial.h> // UART Library
 #include <Wire.h> // I2C library
 #include <SPI.h> // SPI library
@@ -19,15 +18,22 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 #include <Adafruit_BMP085.h> // BMP 085 or 180 pressure sensor library
 #include <Adafruit_MPU6050.h> // MPU6050 accelerometer sensor library
 #include <Adafruit_Sensor.h> // Adafruit unified sensor library
-#include <Adafruit_LSM9DS1.h> // Include LSM9DS1 library
+//#include <Adafruit_LSM9DS1.h> // Include LSM9DS1 library
 #include <cmath>
 #include <iostream>
+#include <EEPROM.h>
 
+//UART Serial Objects
 #define rfSerial Serial1
 #define gpsSerial Serial2
 
+//SD card variables 
+const int chipSelect = 10;
+char* logFileName;
+File logfile;
+
 // Create the sensor objects
-Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(); //Accelerometer
+Adafruit_MPU6050 mpu; //Accelerometer
 Adafruit_BMP085 bmp; //Pitot Tube Pressure Sensor
 
 int gpsVersion = 2; //SAM-M8Q
@@ -36,6 +42,7 @@ int gpsVersion = 2; //SAM-M8Q
 bool lowPower = 0;
 bool lowDataTransfer = 0;
 int shutdownCheck[3] = {0,0,0}; //All three elements must be >0 to activate shutdown
+int time_last_command = 0;
 
 int bitLenthList[10] = {12,//Seconds since launch
                         1, //Sender Ident
@@ -89,7 +96,7 @@ int BMP280_RATE = 7,
 
 //Telemetry variables
 float time_since_launch = 0;//seconds
-int sender_indent = 0;
+int sender_indent = 0;//0: Avionics 1: Payload drone
 float altitude = 0,//meters
       latitude = 0,//meters
       longitude = 0,//meters
@@ -98,18 +105,26 @@ float altitude = 0,//meters
       orientationY = 0;//degrees
 
 void setup() {
-  // Start hardware serial communication (for debugging)
-  Serial.begin(9600);
-  
-  rfSerial.begin(57600);//Init RFD UART
-  Serial.println("Software serial initialized.");
-  
-  if (!initSAM_M8Q()) {setErr(SAMM8Q_FAIL);}//Init SAM_M8Q and error if fails
-  if (!lsm.begin()) {setErr(MPU6050_FAIL);}//Init MPU6050 and error if fails
-  if (!bmp.begin()) {setErr(BMP280_FAIL);}//Init BMP280 and error if fails
+  if(detect_good_shutdown()){
+    Serial.begin(9600);// Start hardware serial communication (for debugging)
+    
+    rfSerial.begin(57600);//Init RFD UART
+    Serial.println("Software serial initialized.");
+    
+    if (!initSAM_M8Q()) {setErr(SAMM8Q_FAIL);}//Init SAM_M8Q and error if fails
+    if (!mpu.begin()) {setErr(MPU6050_FAIL);}//Init MPU6050 and error if fails
+    if (!bmp.begin()) {setErr(BMP280_FAIL);}//Init BMP280 and error if fails
+    if (!SD.begin()) {setErr(SD_FAIL);}//Init SD reader and error if fails
 
-  // Setup sensor ranges
-  setupSensors();  // Added missing semicolon here
+    logFileName = checkFile(); //Looks for log files already present
+    logfile = SD.open(logFileName, FILE_WRITE);
+    logfile.println("micros, bmp_alt (m), bmp_pressure (Pa), bmp_temp (C), solenoid state, launch detected, apogee detected, landed, ground detection count"); // write header at top of log file
+    logfile.close();
+
+    setupSensors();
+  }else{
+    setErr(MAIN_PWR_FAULT);
+  }
 }
 
 void loop() {
@@ -118,11 +133,13 @@ void loop() {
   if (rfSerial.available() > 0) {//Ping Data From Ground Station
     incomingByte = rfSerial.read();
     rfSerial.print(incomingByte);
+    commands(incomingByte);
+  }
+  if(lowDataTransfer){
+    rfSerial.println(readyPacket());//Send telemetr
   }
 
-  rfSerial.println(readyPacket());
-
-  // Read sensor data
+  /* Read sensor data
   sensors_event_t accel, gyro, mag, temp;
   lsm.getEvent(&accel, &gyro, &mag, &temp);
   
@@ -146,31 +163,9 @@ void loop() {
   // Calculate altitude assuming 'standard' barometric
   // pressure of 1013.25 millibar = 101325 Pascal
   rfSerial.print(" ALT = "); rfSerial.print(bmp.readAltitude()); rfSerial.print("m");
-  rfSerial.println();
+  rfSerial.println();*/
 
   delay(50);
-}
-
-// Select I2C Bus On I2C Multiplexer (if used)
-void TCA9548A(uint8_t bus) {
-  Wire.beginTransmission(0x70);  // TCA9548A address
-  Wire.write(1 << bus);            // send byte to select bus
-  Wire.endTransmission();
-  Serial.print(bus);
-}
-
-void setupSensors(){//Ryan Santiago
-  // 1.) Set accelerometer range:
-  lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_2G);
-  // Other ranges can be set as needed
-
-  // 2.) Set gyroscope range:
-  lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_245DPS);
-  // Other ranges can be set as needed
-
-  // 3.) Set magnetometer range:
-  lsm.setupMag(lsm.LSM9DS1_MAGGAIN_4GAUSS);
-  // Other gains can be set as needed
 }
 
 //==========GPS CODE==========//Based on SparkyVT https://github.com/SparkyVT/HPR-Rocket-Flight-Computer/blob/V4_7_0/Main%20Code/UBLOX_GNSS_Config.ino
@@ -314,63 +309,53 @@ char* readyPacket(){//Combines telemetry into bit array then convert to char arr
   int bitArray[bitArrayLength] = {};
   static char charArray[charArrayLegnth + 1]  {}; //+1 to include checksum byte, static so that the mem alloc is retained throughout the program
   int bitIndex = 0;
-  if(lowDataTransfer){
-    for(int i = 0; i < 10; i++){
-      int dataLength = bitLenthList[i];
-      if(i == 1){//Deal with ident
-        bitArray[bitIndex] = 0;//0 for avionics
-      }else if((i == 0) || (i > 1 && i < 8)){//Deal with floats
-        float datum = 0;
-        switch(i){
-          case 0:datum = time_since_launch;break;
-          case 2:datum = altitude;break;
-          case 3:datum = latitude;break;
-          case 4:datum = longitude;break;
-          case 5:datum = velocity;break;
-          case 6:datum = orientationX;break;
-          case 7:datum = orientationY;break;
-        }
-        int* bitsPtr = dec_to_binary(datum, dataLength);
-        for(int x = 0; x < dataLength; x++){
-          bitArray[bitIndex] = *(bitsPtr+dataLength-1-x);
-          bitIndex++;
-        }
-      }else if(i == 8){//Deal with error codes and checksum
-        for(int x = 0; x < dataLength; x++){
-          bitArray[bitIndex] = errorCodes[x];
-        }
-      }else if(i == 9){
-        charArray[charArrayLegnth-1] = radioChecksum(bitArray, bitArrayLength);
+  for(int i = 0; i < 10; i++){
+    int dataLength = bitLenthList[i];
+    if(i == 1){//Deal with ident
+      bitArray[bitIndex] = sender_indent;
+    }else if((i == 0) || (i > 1 && i < 8)){//Deal with floats
+      float datum = 0;
+      switch(i){
+        case 0:datum = time_since_launch;break;
+        case 2:datum = altitude;break;
+        case 3:datum = latitude;break;
+        case 4:datum = longitude;break;
+        case 5:datum = velocity;break;
+        case 6:datum = orientationX;break;
+        case 7:datum = orientationY;break;
       }
-    }
-    int charIndex = 0;
-    for(int i = 0; i < bitArrayLength; i+=8){
-      char result = 0;
-      result |= (bitArray[i] << 7); // Set bit 7
-      result |= (bitArray[i+1] << 6); // Set bit 6
-      result |= (bitArray[i+2] << 5); // Set bit 5
-      result |= (bitArray[i+3] << 4); // Set bit 4
-      result |= (bitArray[i+4] << 3); // Set bit 3
-      result |= (bitArray[i+5] << 2); // Set bit 2
-      result |= (bitArray[i+6] << 1); // Set bit 1
-      result |= (bitArray[i+7] << 0); // Set bit 0
-      charArray[charIndex] = result;
-      charIndex++;
+      int* bitsPtr = dec_to_binary(datum, dataLength);
+      for(int x = 0; x < dataLength; x++){
+        bitArray[bitIndex] = *(bitsPtr+dataLength-1-x);
+        bitIndex++;
+      }
+    }else if(i == 8){//Deal with error codes and checksum
+      for(int x = 0; x < dataLength; x++){
+        bitArray[bitIndex] = errorCodes[x];
+      }
+    }else if(i == 9){
+      charArray[charArrayLegnth-1] = radioChecksum(bitArray, bitArrayLength);
     }
   }
+  int charIndex = 0;
+  for(int i = 0; i < bitArrayLength; i+=8){
+    char result = 0;
+    result |= (bitArray[i] << 7); // Set bit 7
+    result |= (bitArray[i+1] << 6); // Set bit 6
+    result |= (bitArray[i+2] << 5); // Set bit 5
+    result |= (bitArray[i+3] << 4); // Set bit 4
+    result |= (bitArray[i+4] << 3); // Set bit 3
+    result |= (bitArray[i+5] << 2); // Set bit 2
+    result |= (bitArray[i+6] << 1); // Set bit 1
+    result |= (bitArray[i+7] << 0); // Set bit 0
+    charArray[charIndex] = result;
+    charIndex++;
+  }
   return charArray;
-}
+}//end readyPacket
 byte radioChecksum(int *radioMSG, byte msgLength){
   return 0;
-}
-//==============================
-
-void setErr(int errorCode){
-  errorCodes[errorCode] = 1;}
-
-void clearErr(int errorCode){
-  errorCodes[errorCode] = 0;}
-
+}//end radioChecksum
 int* dec_to_binary(float my_dec, int my_bit){//Ellie McGshee, Returns elements in reverse order
   int my_dec_int = static_cast<int>(round(my_dec));
   int my_rem;
@@ -390,29 +375,124 @@ int* dec_to_binary(float my_dec, int my_bit){//Ellie McGshee, Returns elements i
     my_dec_int = my_rem;
   }
   return my_arr;
-}//dec_to_binary
+}//end dec_to_binary
+//==============================
 
-// ================================================Elizabeth McGhee
+//===========EVENT DETECTION CODE==========Elizabeth McGhee
 /*bool detect_liftoff(){
   if (altitude > 50.0 and accel.acceleration.y > 2*g){
     return 1;
-}else{
+  }else{
   return 0;}
-}*/
-
-/*bool detect_burnout(){
+}
+bool detect_burnout(){
   float dummy_variable = 0.3; //We don't know this yet
   float g = 9.81; 
   if (altitude > dummy_variables and accel.acceleration.y < g){
     return 1;
-} else {
+  } else {
     return 0;}
 }*/
-
 bool detect_landing(){
   if (altitude < 50.0){
     return 1;
-} else {
+  } else {
   return 0;}  
+}//end detect_landing
+bool detect_good_shutdown(){//Alleon Oxales
+  for(int i = 0; i < 3; i++){
+    int value = EEPROM.read(i);
+    if(value == 0xff){
+      EEPROM.write(i, 0);
+    }else{
+      return false;
+    }
+  }
+  return true;
+}//end detect_good_shutdown
+//========================================
+
+//=========SENSOR CODE==========
+void TCA9548A(uint8_t bus) {// Select I2C Bus On I2C Multiplexer (if used)
+  Wire.beginTransmission(0x70);  // TCA9548A address
+  Wire.write(1 << bus);            // send byte to select bus
+  Wire.endTransmission();
+  Serial.print(bus);
+}//end TCA9548A
+void setupSensors(){//Ryan Santiago
+  // 1.) Set accelerometer range:
+  /*lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_2G);
+  // Other ranges can be set as needed
+
+  // 2.) Set gyroscope range:
+  lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_245DPS);
+  // Other ranges can be set as needed
+
+  // 3.) Set magnetometer range:
+  lsm.setupMag(lsm.LSM9DS1_MAGGAIN_4GAUSS);
+  // Other gains can be set as needed*/
+}//end setupSensors
+//==============================
+
+
+
+void setErr(int errorCode){
+  errorCodes[errorCode] = 1;
+}//end setErr
+void clearErr(int errorCode){
+  errorCodes[errorCode] = 0;
+}//end clearErr
+void commands(int command){
+  if(shutdownCheck[2] == 0 && millis() - time_last_command > 1000){
+    shutdownCheck[0] = 0;shutdownCheck[1] = 0;shutdownCheck[2] = 0;//Reset shutdown checks after 1s timeout
+  }
+  switch(command){//Check for commands
+    case 0xff:
+      for(int i = 0; i < 3; i++){ 
+        if(shutdownCheck[i] == 0){
+          shutdownCheck[i] = 0xFF;
+          break;
+        }
+      }
+      if(shutdownCheck[0] == 0xff && shutdownCheck[1] == 0xff && shutdownCheck[2] == 0xff){//Write shutdown flag to EEPROM
+        EEPROM.write(0,0xff);
+        EEPROM.write(1,0xff);
+        EEPROM.write(2,0xff);
+      }
+      break;
+    case 0x01:
+      lowPower = 1;
+      break;
+    case 0x02:
+      lowPower = 2;
+      break;
+    case 0x03:
+      lowDataTransfer = 0;
+      break;
+    case 0x04:
+      lowDataTransfer = 1;
+      break;
+    case 0x05:
+      break;    
+  }
+  time_last_command = millis();
 }
-  
+char* checkFile(){//Alleon Oxales
+  int fileExists = 1;
+  int fileNum = 0;
+  static char fileName[8] = "000.txt";
+  while(fileExists){
+    fileName[0] = '0' + fileNum/100;
+    fileName[1] = '0' + (fileNum%100)/10;
+    fileName[2] = '0' + fileNum%10;
+    File checkfile = SD.open(fileName);
+    checkfile.seek(1 * 6);
+    String content = checkfile.readStringUntil('\r');
+    if(content != ""){
+      fileNum++;
+    }else{
+      fileExists = 0;
+    }
+  }
+  return fileName;
+}//end checkFile

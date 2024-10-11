@@ -44,7 +44,7 @@ bool lowDataTransfer = 0;
 int shutdownCheck[3] = {0,0,0}; //All three elements must be >0 to activate shutdown
 int time_last_command = 0;
 
-int bitLenthList[10] = {12,//Seconds since launch
+int bitLenthList[11] = {12,//Seconds since launch
                         1, //Sender Ident
                         12, //Altitude
                         12, //Latitude
@@ -52,11 +52,12 @@ int bitLenthList[10] = {12,//Seconds since launch
                         9, //Velocity
                         8, //OrientationX
                         8, //OrientationY
-                        30, //Error Code Array
+                        32, //Error Code Array
+                        6, //Even bit Array
                         8 //Checksum
                         };//Represents the number of bits for each part of the data transmission
-
-int errorCodes[30] = {}; //Check document for error code list
+int events[6] = {};
+int errorCodes[32] = {}; //Check document for error code list
 
 //Error codes
 int PRGM_ERR = 0,
@@ -103,7 +104,13 @@ float altitude = 0,//meters
       velocity = 0,//meters per second
       orientationX = 0,//degrees
       orientationY = 0;//degrees
-
+//Kinematics variables
+float abs_pos[3] = {0,0,0},//Absolute position measurements
+      dt_pos[3] = {0,0,0},//Derivative position measurements
+      d2t_pos[3] = {0,0,0},//2nd Derivative position measurement
+      abs_rot[3] = {0,0,0},//Absolute rotation measurements
+      dt_rot[3] = {0,0,0},//Derivatie rotation measurements
+      d2_rot[3] = {0,0,0};//2nd Derivative rotation measurements
 void setup() {
   if(detect_good_shutdown()){
     Serial.begin(9600);// Start hardware serial communication (for debugging)
@@ -304,12 +311,12 @@ void readGPS(){//W.I.P.
 
 //==========RADIO CODE==========Alleon Oxales
 char* readyPacket(){//Combines telemetry into bit array then convert to char array
-  const int bitArrayLength = 104;
+  const int bitArrayLength = 112;
   const int charArrayLegnth = bitArrayLength/8;
   int bitArray[bitArrayLength] = {};
   static char charArray[charArrayLegnth + 1]  {}; //+1 to include checksum byte, static so that the mem alloc is retained throughout the program
   int bitIndex = 0;
-  for(int i = 0; i < 10; i++){
+  for(int i = 0; i < 11; i++){
     int dataLength = bitLenthList[i];
     if(i == 1){//Deal with ident
       bitArray[bitIndex] = sender_indent;
@@ -329,11 +336,17 @@ char* readyPacket(){//Combines telemetry into bit array then convert to char arr
         bitArray[bitIndex] = *(bitsPtr+dataLength-1-x);
         bitIndex++;
       }
-    }else if(i == 8){//Deal with error codes and checksum
+    }else if(i == 8){//Deal with error codes
       for(int x = 0; x < dataLength; x++){
         bitArray[bitIndex] = errorCodes[x];
+        bitIndex++;
       }
-    }else if(i == 9){
+    }else if(i == 9){//Deal with event bits
+      for(int x = 0; x < dataLength; x++){
+        bitArray[bitIndex] = events[x];
+        bitIndex++;
+      }
+    }else if(i == 10){//Deal with checksum
       charArray[charArrayLegnth-1] = radioChecksum(bitArray, bitArrayLength);
     }
   }

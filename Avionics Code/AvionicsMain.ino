@@ -23,6 +23,9 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 #include <iostream>
 #include <EEPROM.h>
 
+#define AS5600_ADDR 0x36
+#define RAW_ANGLE_REG 0x0C
+
 //UART Serial Objects
 #define rfSerial Serial1
 #define gpsSerial Serial2
@@ -40,7 +43,7 @@ int gpsVersion = 2; //SAM-M8Q
 
 // AV Modes
 bool lowPower = 0;
-bool lowDataTransfer = 0;
+bool lowDataTransfer = 1;
 int shutdownCheck[3] = {0,0,0}; //All three elements must be >0 to activate shutdown
 int time_last_command = 0;
 
@@ -112,8 +115,9 @@ float abs_pos[3] = {0,0,0},//Absolute position measurements
       dt_rot[3] = {0,0,0},//Derivatie rotation measurements
       d2_rot[3] = {0,0,0};//2nd Derivative rotation measurements
 void setup() {
-  if(detect_good_shutdown()){
-    Serial.begin(9600);// Start hardware serial communication (for debugging)
+  Serial.begin(57600);// Start hardware serial communication (for debugging)
+  Serial.println("Initializing");
+  if(detect_good_shutdown() || true){
     
     rfSerial.begin(57600);//Init RFD UART
     Serial.println("Software serial initialized.");
@@ -142,9 +146,20 @@ void loop() {
     rfSerial.print(incomingByte);
     commands(incomingByte);
   }
-  if(lowDataTransfer){
-    rfSerial.println(readyPacket());//Send telemetr
+
+  altitude = static_cast<float>(readRawAngle());
+  char* massage = readyPacket();
+  for(int i = 0; i< 14; i++){
+    Serial.print(&massage[i]);//Send telemetry
   }
+  Serial.println();
+  if(lowDataTransfer){
+    for(int i = 0; i< 14; i++){
+      rfSerial.print(&massage[i]);//Send telemetr
+    }
+    rfSerial.println();
+  }
+
 
   /* Read sensor data
   sensors_event_t accel, gyro, mag, temp;
@@ -172,7 +187,7 @@ void loop() {
   rfSerial.print(" ALT = "); rfSerial.print(bmp.readAltitude()); rfSerial.print("m");
   rfSerial.println();*/
 
-  delay(50);
+  delay(1);
 }
 
 //==========GPS CODE==========//Based on SparkyVT https://github.com/SparkyVT/HPR-Rocket-Flight-Computer/blob/V4_7_0/Main%20Code/UBLOX_GNSS_Config.ino
@@ -347,7 +362,8 @@ char* readyPacket(){//Combines telemetry into bit array then convert to char arr
         bitIndex++;
       }
     }else if(i == 10){//Deal with checksum
-      charArray[charArrayLegnth-1] = radioChecksum(bitArray, bitArrayLength);
+      //charArray[charArrayLegnth-1] = radioChecksum(bitArray, bitArrayLength);
+      charArray[charArrayLegnth-1] = 'E';
     }
   }
   int charIndex = 0;
@@ -445,6 +461,27 @@ void setupSensors(){//Ryan Santiago
   lsm.setupMag(lsm.LSM9DS1_MAGGAIN_4GAUSS);
   // Other gains can be set as needed*/
 }//end setupSensors
+int readRawAngle() {
+  Wire.beginTransmission(AS5600_ADDR);
+  Wire.write(RAW_ANGLE_REG);  // Set the register to read raw angle
+  Wire.endTransmission();
+  
+  // Request 2 bytes from AS5600
+  Wire.requestFrom(AS5600_ADDR, 2);
+  if (Wire.available() == 2) {
+    int highByte = Wire.read();
+    int lowByte = Wire.read();
+    
+    // Combine high and low byte to form a 12-bit result
+    int angle = (highByte << 8) | lowByte;
+    
+    // Return the angle
+    return angle;
+  } else {
+    // Return -1 if reading fails
+    return -1;
+  }
+}
 //==============================
 
 

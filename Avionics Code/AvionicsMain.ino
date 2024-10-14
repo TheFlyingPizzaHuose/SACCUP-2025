@@ -47,7 +47,7 @@ bool lowDataTransfer = 1;
 int shutdownCheck[3] = {0,0,0}; //All three elements must be >0 to activate shutdown
 int time_last_command = 0;
 
-int bitLenthList[11] = {12,//Seconds since launch
+int bitLenthList[12] = {12,//Seconds since launch
                         1, //Sender Ident
                         12, //Altitude
                         12, //Latitude
@@ -57,7 +57,8 @@ int bitLenthList[11] = {12,//Seconds since launch
                         8, //OrientationY
                         32, //Error Code Array
                         6, //Even bit Array
-                        8 //Checksum
+                        8, //Checksum
+                        8 //End Character
                         };//Represents the number of bits for each part of the data transmission
 int events[6] = {};
 int errorCodes[32] = {}; //Check document for error code list
@@ -101,12 +102,12 @@ int BMP280_RATE = 7,
 //Telemetry variables
 float time_since_launch = 0;//seconds
 int sender_indent = 0;//0: Avionics 1: Payload drone
-float altitude = 0,//meters
-      latitude = 0,//meters
-      longitude = 0,//meters
-      velocity = 0,//meters per second
-      orientationX = 0,//degrees
-      orientationY = 0;//degrees
+float altitude = 1,//meters
+      latitude = 1,//meters
+      longitude = 1,//meters
+      velocity = 1,//meters per second
+      orientationX = 1,//degrees
+      orientationY = 1;//degrees
 //Kinematics variables
 float abs_pos[3] = {0,0,0},//Absolute position measurements
       dt_pos[3] = {0,0,0},//Derivative position measurements
@@ -122,7 +123,7 @@ void setup() {
     rfSerial.begin(57600);//Init RFD UART
     Serial.println("Software serial initialized.");
     
-    if (!initSAM_M8Q()) {setErr(SAMM8Q_FAIL);}//Init SAM_M8Q and error if fails
+    //if (!initSAM_M8Q()) {setErr(SAMM8Q_FAIL);}//Init SAM_M8Q and error if fails
     if (!mpu.begin()) {setErr(MPU6050_FAIL);}//Init MPU6050 and error if fails
     if (!bmp.begin()) {setErr(BMP280_FAIL);}//Init BMP280 and error if fails
     if (!SD.begin()) {setErr(SD_FAIL);}//Init SD reader and error if fails
@@ -149,15 +150,17 @@ void loop() {
 
   altitude = static_cast<float>(readRawAngle());
   char* massage = readyPacket();
-  for(int i = 0; i< 14; i++){
-    Serial.print(&massage[i]);//Send telemetry
+  for(int i = 0; i< 15; i++){
+    //char aChar = '0' + (i%10);
+    //Serial.print(aChar);
+    Serial.print(*(massage+i));//Send telemetry
   }
   Serial.println();
   if(lowDataTransfer){
-    for(int i = 0; i< 14; i++){
+    for(int i = 0; i< 15; i++){
       rfSerial.print(&massage[i]);//Send telemetr
     }
-    rfSerial.println();
+    //rfSerial.println();
   }
 
 
@@ -187,7 +190,7 @@ void loop() {
   rfSerial.print(" ALT = "); rfSerial.print(bmp.readAltitude()); rfSerial.print("m");
   rfSerial.println();*/
 
-  delay(1);
+  //delay(10);
 }
 
 //==========GPS CODE==========//Based on SparkyVT https://github.com/SparkyVT/HPR-Rocket-Flight-Computer/blob/V4_7_0/Main%20Code/UBLOX_GNSS_Config.ino
@@ -326,10 +329,10 @@ void readGPS(){//W.I.P.
 
 //==========RADIO CODE==========Alleon Oxales
 char* readyPacket(){//Combines telemetry into bit array then convert to char array
-  const int bitArrayLength = 112;
+  const int bitArrayLength = 120;
   const int charArrayLegnth = bitArrayLength/8;
   int bitArray[bitArrayLength] = {};
-  static char charArray[charArrayLegnth + 1]  {}; //+1 to include checksum byte, static so that the mem alloc is retained throughout the program
+  static char charArray[charArrayLegnth+1]  {}; //+1 to include checksum byte, static so that the mem alloc is retained throughout the program
   int bitIndex = 0;
   for(int i = 0; i < 11; i++){
     int dataLength = bitLenthList[i];
@@ -348,6 +351,7 @@ char* readyPacket(){//Combines telemetry into bit array then convert to char arr
       }
       int* bitsPtr = dec_to_binary(datum, dataLength);
       for(int x = 0; x < dataLength; x++){
+        //Serial.print(*(bitsPtr+dataLength-1-x));
         bitArray[bitIndex] = *(bitsPtr+dataLength-1-x);
         bitIndex++;
       }
@@ -362,8 +366,9 @@ char* readyPacket(){//Combines telemetry into bit array then convert to char arr
         bitIndex++;
       }
     }else if(i == 10){//Deal with checksum
-      //charArray[charArrayLegnth-1] = radioChecksum(bitArray, bitArrayLength);
-      charArray[charArrayLegnth-1] = 'E';
+      charArray[charArrayLegnth-1] = radioChecksum(bitArray, bitArrayLength);
+    }else if(i == 11){//End Character
+      charArray[charArrayLegnth] = '@';
     }
   }
   int charIndex = 0;
@@ -383,7 +388,7 @@ char* readyPacket(){//Combines telemetry into bit array then convert to char arr
   return charArray;
 }//end readyPacket
 byte radioChecksum(int *radioMSG, byte msgLength){
-  return 0;
+  return '_';
 }//end radioChecksum
 int* dec_to_binary(float my_dec, int my_bit){//Ellie McGshee, Returns elements in reverse order
   int my_dec_int = static_cast<int>(round(my_dec));
@@ -479,7 +484,7 @@ int readRawAngle() {
     return angle;
   } else {
     // Return -1 if reading fails
-    return -1;
+    return 360;
   }
 }
 //==============================

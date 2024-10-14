@@ -410,6 +410,18 @@ int* dec_to_binary(float my_dec, int my_bit){//Ellie McGshee, Returns elements i
   }
   return my_arr;
 }//end dec_to_binary
+//==================================================
+//Binary to decimal (Elizabeth McGhee)
+float binary_to_dec(int my_bit_size, int* my_arr){
+    float my_sum = 0;
+    int my_index = 0;
+    for (int i = my_bit_size-1; i >= 0; i--){
+        my_sum = pow(2, my_index) * *(my_arr+i)+ my_sum;
+        my_index++;
+    }
+    return my_sum;
+}
+//end binary to decimal ============================================
 //==============================
 
 //===========EVENT DETECTION CODE==========Elizabeth McGhee

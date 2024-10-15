@@ -43,11 +43,11 @@ int gpsVersion = 2; //SAM-M8Q
 
 // AV Modes
 bool lowPower = 0;
-bool lowDataTransfer = 1;
+bool lowDataTransfer = 0;
 int shutdownCheck[3] = {0,0,0}; //All three elements must be >0 to activate shutdown
 int time_last_command = 0;
 
-int bitLenthList[12] = {12,//Seconds since launch
+int bitLengthList[10] = {12,//Seconds since launch
                         1, //Sender Ident
                         12, //Altitude
                         12, //Latitude
@@ -56,10 +56,10 @@ int bitLenthList[12] = {12,//Seconds since launch
                         8, //OrientationX
                         8, //OrientationY
                         32, //Error Code Array
-                        6, //Even bit Array
-                        8, //Checksum
-                        8 //End Character
-                        };//Represents the number of bits for each part of the data transmission
+                        6 //Even bit Array
+                        };//Represents the number of bits for each part of the data transmission excluding checksum and endchar
+const int bitArrayLength = 112;
+const int charArrayLegnth = bitArrayLength/8 + 3;
 int events[6] = {};
 int errorCodes[32] = {}; //Check document for error code list
 
@@ -101,13 +101,13 @@ int BMP280_RATE = 7,
 
 //Telemetry variables
 float time_since_launch = 0;//seconds
-int sender_indent = 0;//0: Avionics 1: Payload drone
-float altitude = 1,//meters
-      latitude = 1,//meters
-      longitude = 1,//meters
-      velocity = 1,//meters per second
-      orientationX = 1,//degrees
-      orientationY = 1;//degrees
+int sender_indent = 1;//0: Avionics 1: Payload drone
+float altitude = 0,//meters
+      latitude = 0,//meters
+      longitude = 0,//meters
+      velocity = 0,//meters per second
+      orientationX = 0,//degrees
+      orientationY = 0;//degrees
 //Kinematics variables
 float abs_pos[3] = {0,0,0},//Absolute position measurements
       dt_pos[3] = {0,0,0},//Derivative position measurements
@@ -145,20 +145,26 @@ void loop() {
   if (rfSerial.available() > 0) {//Ping Data From Ground Station
     incomingByte = rfSerial.read();
     rfSerial.print(incomingByte);
+    Serial.print(incomingByte);
     commands(incomingByte);
   }
 
   altitude = static_cast<float>(readRawAngle());
-  char* massage = readyPacket();
-  for(int i = 0; i< 15; i++){
-    //char aChar = '0' + (i%10);
-    //Serial.print(aChar);
-    Serial.print(*(massage+i));//Send telemetry
-  }
-  Serial.println();
+  time_since_launch = millis()/1000;
   if(lowDataTransfer){
-    for(int i = 0; i< 15; i++){
-      rfSerial.print(&massage[i]);//Send telemetr
+    Serial.println();
+    char* massage = readyPacket();
+    for(int i = 0; i< charArrayLegnth; i++){
+      //char aChar = '0' + (i%10);
+      //Serial.print(aChar);
+      Serial.print(*(massage+i));
+      //int* bins = uint_to_binary(*(massage+i));
+      for(int x = 0; x<8; x++){
+        //Serial.print(*(bins+x));
+      }
+    }
+    for(int i = 0; i< charArrayLegnth; i++){
+      rfSerial.print(*(massage+i));//Send telemetry
     }
     //rfSerial.println();
   }
@@ -190,7 +196,7 @@ void loop() {
   rfSerial.print(" ALT = "); rfSerial.print(bmp.readAltitude()); rfSerial.print("m");
   rfSerial.println();*/
 
-  //delay(10);
+  delay(50);
 }
 
 //==========GPS CODE==========//Based on SparkyVT https://github.com/SparkyVT/HPR-Rocket-Flight-Computer/blob/V4_7_0/Main%20Code/UBLOX_GNSS_Config.ino
@@ -329,13 +335,11 @@ void readGPS(){//W.I.P.
 
 //==========RADIO CODE==========Alleon Oxales
 char* readyPacket(){//Combines telemetry into bit array then convert to char array
-  const int bitArrayLength = 120;
-  const int charArrayLegnth = bitArrayLength/8;
   int bitArray[bitArrayLength] = {};
-  static char charArray[charArrayLegnth+1]  {}; //+1 to include checksum byte, static so that the mem alloc is retained throughout the program
+  static char charArray[charArrayLegnth]  {}; //+1 to include checksum byte, static so that the mem alloc is retained throughout the program
   int bitIndex = 0;
-  for(int i = 0; i < 11; i++){
-    int dataLength = bitLenthList[i];
+  for(int i = 0; i < 10; i++){
+    int dataLength = bitLengthList[i];
     if(i == 1){//Deal with ident
       bitArray[bitIndex] = sender_indent;
     }else if((i == 0) || (i > 1 && i < 8)){//Deal with floats
@@ -365,11 +369,10 @@ char* readyPacket(){//Combines telemetry into bit array then convert to char arr
         bitArray[bitIndex] = events[x];
         bitIndex++;
       }
-    }else if(i == 10){//Deal with checksum
-      charArray[charArrayLegnth-1] = radioChecksum(bitArray, bitArrayLength);
-    }else if(i == 11){//End Character
-      charArray[charArrayLegnth] = '@';
     }
+    charArray[charArrayLegnth-3] = radioChecksum(bitArray, bitArrayLength);
+    charArray[charArrayLegnth-2] = 'R';
+    charArray[charArrayLegnth-1] = 'L';
   }
   int charIndex = 0;
   for(int i = 0; i < bitArrayLength; i+=8){
@@ -410,7 +413,6 @@ int* dec_to_binary(float my_dec, int my_bit){//Ellie McGshee, Returns elements i
   }
   return my_arr;
 }//end dec_to_binary
-//==================================================
 //Binary to decimal (Elizabeth McGhee)
 float binary_to_dec(int my_bit_size, int* my_arr){
     float my_sum = 0;
@@ -420,8 +422,19 @@ float binary_to_dec(int my_bit_size, int* my_arr){
         my_index++;
     }
     return my_sum;
-}
-//end binary to decimal ============================================
+}//end binary to decimal
+int* uint_to_binary(char character){
+  static int result[8];
+  result[0] = (character & (1 << 7)) > 0;
+  result[1] = (character & (1 << 6)) > 0;
+  result[2] = (character & (1 << 5)) > 0;
+  result[3] = (character & (1 << 4)) > 0;
+  result[4] = (character & (1 << 3)) > 0;
+  result[5] = (character & (1 << 2)) > 0;
+  result[6] = (character & (1 << 1)) > 0;
+  result[7] = (character & (1 << 0)) > 0;
+  return result;
+}//end uint_to_binary
 //==============================
 
 //===========EVENT DETECTION CODE==========Elizabeth McGhee
@@ -496,7 +509,7 @@ int readRawAngle() {
     return angle;
   } else {
     // Return -1 if reading fails
-    return 360;
+    return 180;
   }
 }
 //==============================

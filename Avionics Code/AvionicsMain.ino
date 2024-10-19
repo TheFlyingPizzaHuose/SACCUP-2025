@@ -16,6 +16,7 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 #include <SPI.h> // SPI library
 #include <SD.h> // SD card library
 #include <Adafruit_BMP085.h> // BMP 085 or 180 pressure sensor library
+#include <Adafruit_BMP280.h> // BMP 085 or 180 pressure sensor library
 #include <Adafruit_MPU6050.h> // MPU6050 accelerometer sensor library
 #include <Adafruit_Sensor.h> // Adafruit unified sensor library
 //#include <Adafruit_LSM9DS1.h> // Include LSM9DS1 library
@@ -26,18 +27,24 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 #define AS5600_ADDR 0x36
 #define RAW_ANGLE_REG 0x0C
 
+#define BMP_SCL 13
+#define BMP_SDO 12
+#define BMP_SDA 11
+
 //UART Serial Objects
 #define rfSerial Serial1
 #define gpsSerial Serial2
 
 //SD card variables 
-const int chipSelect = 10;
+const int sdSelect = 10;
 char* logFileName;
 File logfile;
 
 // Create the sensor objects
 Adafruit_MPU6050 mpu; //Accelerometer
-Adafruit_BMP085 bmp; //Pitot Tube Pressure Sensor
+const int bmpSelect = 9;
+Adafruit_BMP280 bmp1(&Wire); //Pitot Tube Pressure Sensor
+Adafruit_BMP085 bmp2;
 
 int gpsVersion = 2; //SAM-M8Q
 
@@ -118,15 +125,22 @@ float abs_pos[3] = {0,0,0},//Absolute position measurements
 void setup() {
   Serial.begin(57600);// Start hardware serial communication (for debugging)
   Serial.println("Initializing");
-  if(detect_good_shutdown() || true){
+  Wire.begin();
+  Wire.setSDA(18);
+  Wire.setSCL(19);
+  if(true || detect_good_shutdown()){
     
     rfSerial.begin(57600);//Init RFD UART
     Serial.println("Software serial initialized.");
     
     //if (!initSAM_M8Q()) {setErr(SAMM8Q_FAIL);}//Init SAM_M8Q and error if fails
-    if (!mpu.begin()) {setErr(MPU6050_FAIL);}//Init MPU6050 and error if fails
-    if (!bmp.begin()) {setErr(BMP280_FAIL);}//Init BMP280 and error if fails
-    if (!SD.begin()) {setErr(SD_FAIL);}//Init SD reader and error if fails
+    if (!mpu.begin()) {setErr(MPU6050_FAIL);}//Init MPU6050 and error if fails   
+    //int status = bmp1.begin(0x77);
+    int status = bmp2.begin(1, &Wire);
+    Serial.println(status);
+    if (!bmp1.begin(0x77)) {setErr(BMP280_FAIL);}//Init BMP280 and error if fails  
+    if (!status) {setErr(BMP180_1_FAIL);}//Init BMP280 and error if fails   
+    if (!SD.begin(sdSelect)) {setErr(SD_FAIL);}//Init SD reader and error if fails
 
     logFileName = checkFile(); //Looks for log files already present
     logfile = SD.open(logFileName, FILE_WRITE);
@@ -149,7 +163,8 @@ void loop() {
     commands(incomingByte);
   }
 
-  altitude = static_cast<float>(readRawAngle());
+  altitude = bmp2.readPressure(); /* Adjusted to local forecast! */
+  Serial.println(altitude);
   time_since_launch = millis()/1000;
   if(lowDataTransfer){
     Serial.println();
@@ -157,7 +172,7 @@ void loop() {
     for(int i = 0; i< charArrayLegnth; i++){
       //char aChar = '0' + (i%10);
       //Serial.print(aChar);
-      Serial.print(*(massage+i));
+      //Serial.print(*(massage+i));
       //int* bins = uint_to_binary(*(massage+i));
       for(int x = 0; x<8; x++){
         //Serial.print(*(bins+x));

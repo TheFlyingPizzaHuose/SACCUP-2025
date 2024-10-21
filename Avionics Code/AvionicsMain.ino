@@ -162,11 +162,7 @@ void loop() {
     commands(incomingByte);
   }
 
-  altitude = bmp2.readPressure(); /* Adjusted to local forecast! */
-  Serial.print(altitude);
-  Serial.print("||");
-  Serial.print(bmp1.readPressure());
-  Serial.println();
+  altitude = (bmp2.readAltitude(102500)+bmp1.readAltitude(1025))/2; /* Adjusted to local forecast! */
   time_since_launch = millis()/1000;
   if(lowDataTransfer){
     Serial.println();

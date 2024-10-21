@@ -16,7 +16,7 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 #include <SPI.h> // SPI library
 #include <SD.h> // SD card library
 #include <Adafruit_BMP085.h> // BMP 085 or 180 pressure sensor library
-#include <Adafruit_BMP280.h> // BMP 085 or 180 pressure sensor library
+#include <Adafruit_BMP280.h> // BMP 280 pressure sensor library
 #include <Adafruit_MPU6050.h> // MPU6050 accelerometer sensor library
 #include <Adafruit_Sensor.h> // Adafruit unified sensor library
 //#include <Adafruit_LSM9DS1.h> // Include LSM9DS1 library
@@ -126,8 +126,7 @@ void setup() {
   Serial.begin(57600);// Start hardware serial communication (for debugging)
   Serial.println("Initializing");
   Wire.begin();
-  Wire.setSDA(18);
-  Wire.setSCL(19);
+  Wire1.begin();
   if(true || detect_good_shutdown()){
     
     rfSerial.begin(57600);//Init RFD UART
@@ -136,10 +135,10 @@ void setup() {
     //if (!initSAM_M8Q()) {setErr(SAMM8Q_FAIL);}//Init SAM_M8Q and error if fails
     if (!mpu.begin()) {setErr(MPU6050_FAIL);}//Init MPU6050 and error if fails   
     //int status = bmp1.begin(0x77);
-    int status = bmp2.begin(1, &Wire);
-    Serial.println(status);
-    if (!bmp1.begin(0x77)) {setErr(BMP280_FAIL);}//Init BMP280 and error if fails  
-    if (!status) {setErr(BMP180_1_FAIL);}//Init BMP280 and error if fails   
+    //int status = bmp2.begin(3, &Wire1);
+    //Serial.println(status);
+    if (!bmp1.begin()) {setErr(BMP280_FAIL);}//Init BMP280 and error if fails  
+    if (!bmp2.begin(3, &Wire1)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_1_FAIL);}//Init BMP280 and error if fails   
     if (!SD.begin(sdSelect)) {setErr(SD_FAIL);}//Init SD reader and error if fails
 
     logFileName = checkFile(); //Looks for log files already present
@@ -164,7 +163,10 @@ void loop() {
   }
 
   altitude = bmp2.readPressure(); /* Adjusted to local forecast! */
-  Serial.println(altitude);
+  Serial.print(altitude);
+  Serial.print("||");
+  Serial.print(bmp1.readPressure());
+  Serial.println();
   time_since_launch = millis()/1000;
   if(lowDataTransfer){
     Serial.println();

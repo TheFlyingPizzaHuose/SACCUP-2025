@@ -76,8 +76,8 @@ void loop() {
       float my_sum = 0;
       int my_index = 0;
       for(int x = bitLengthList[i]-1; x>=0; x--){//Converts bits back into valueEllie McGchee
-          my_sum = pow(2, my_index) * bitArray[bit_arr_read_pos+x]+ my_sum;
-          my_index++;
+        my_sum = pow(2, my_index) * bitArray[bit_arr_read_pos+x]+ my_sum;
+        my_index++;
       }
       telemetry[i] = my_sum;
       bit_arr_read_pos+=bitLengthList[i];

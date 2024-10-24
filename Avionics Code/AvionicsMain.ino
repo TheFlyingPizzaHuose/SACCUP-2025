@@ -140,6 +140,9 @@ void setup() {
   Wire.begin();
   Wire1.begin();
   
+  uint hunds = '0' - '0', tens = '9' - '0', ones = '0' - '0';//Converting string to integer
+  longitude = static_cast<float>((hunds*100) + (tens*10) + ones);//Converting integer to float
+  Serial.println(longitude);
   if(true || detect_good_shutdown()){
     
     rfSerial.begin(57600);//Init RFD UART
@@ -397,7 +400,7 @@ void readGPS(char* msg, byte size){
             case 7: break;//COURSE
             case 8: break;//DATE
           }
-          for(int i = 0; i < item_length; i++){
+          for(uint i = 0; i < item_length; i++){
             Serial.print(item[i]);
           }
           Serial.print('-');
@@ -437,6 +440,7 @@ char* readyPacket(){//Combines telemetry into bit array then convert to char arr
     int dataLength = bitLengthList[i];
     if(i == 1){//Deal with ident
       bitArray[bitIndex] = sender_indent;
+      bitIndex++;
     }else if((i == 0) || (i > 1 && i < 8)){//Deal with floats
       float datum = 0;
       switch(i){

@@ -19,7 +19,7 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 #include <Adafruit_BMP280.h> // BMP 280 pressure sensor library
 #include <Adafruit_MPU6050.h> // MPU6050 accelerometer sensor library
 #include <Adafruit_Sensor.h> // Adafruit unified sensor library
-//#include <Adafruit_LSM9DS1.h> // Include LSM9DS1 library
+#include <Adafruit_LSM9DS1.h> // Include LSM9DS1 library
 #include <cmath>
 #include <iostream>
 #include <EEPROM.h>
@@ -97,17 +97,28 @@ int PRGM_ERR = 0,
     AS5600_2_FAIL = 23,
     SD_FAIL = 24;
 
-//Sensor measurement time millis WIP
-int BMP280_RATE = 7,
-    SAMM8Q_RATE = 8,
+//Component cycle time micros
+uint BMP280_RATE = 37500,//Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5, Ultra High: 37.5
+    SAMM8Q_RATE = 100000,
     MPU6050_RATE = 9,
-    BMP180_1_RATE = 10,
-    BMP180_2_RATE = 11,
-    AS5600_1_RATE = 12,
-    AS5600_2_RATE = 13;
+    BMP180_RATE = 17,//Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
+    AS5600_RATE = 12,
+    RFD_RATE = 50000;
 
-//Telemetry variables
+//Component last cycle time micros
+uint BMP280_LAST = 0,
+    SAMM8Q_LAST = 0,
+    MPU6050_LAST = 0,
+    BMP180_LAST = 0,
+    AS5600_LAST = 0,
+    RFD_LAST = 0;
+
+//Time variables
+uint time_launch = 0;
+uint last_millis = 0;
+uint last_micros = 0;
 float time_since_launch = 0;//seconds
+
 int sender_indent = 1;//0: Avionics 1: Payload drone
 float altitude = 0,//meters
       latitude = 0,//meters
@@ -115,6 +126,7 @@ float altitude = 0,//meters
       velocity = 0,//meters per second
       orientationX = 0,//degrees
       orientationY = 0;//degrees
+
 //Kinematics variables
 float abs_pos[3] = {0,0,0},//Absolute position measurements
       dt_pos[3] = {0,0,0},//Derivative position measurements
@@ -127,19 +139,21 @@ void setup() {
   Serial.println("Initializing");
   Wire.begin();
   Wire1.begin();
+  
   if(true || detect_good_shutdown()){
     
     rfSerial.begin(57600);//Init RFD UART
     Serial.println("Software serial initialized.");
     
-    //if (!initSAM_M8Q()) {setErr(SAMM8Q_FAIL);}//Init SAM_M8Q and error if fails
+    //int status = initSAM_M8Q();
+    if (!initSAM_M8Q()) {setErr(SAMM8Q_FAIL);}//Init SAM_M8Q and error if fails
     if (!mpu.begin()) {setErr(MPU6050_FAIL);}//Init MPU6050 and error if fails   
     //int status = bmp1.begin(0x77);
     //int status = bmp2.begin(3, &Wire1);
     //Serial.println(status);
     if (!bmp1.begin()) {setErr(BMP280_FAIL);}//Init BMP280 and error if fails  
     if (!bmp2.begin(3, &Wire1)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_1_FAIL);}//Init BMP280 and error if fails   
-    if (!SD.begin(sdSelect)) {setErr(SD_FAIL);}//Init SD reader and error if fails
+    //if (!SD.begin(sdSelect)) {setErr(SD_FAIL);}//Init SD reader and error if fails
 
     logFileName = checkFile(); //Looks for log files already present
     logfile = SD.open(logFileName, FILE_WRITE);
@@ -153,19 +167,34 @@ void setup() {
 }
 
 void loop() {
-  char incomingByte;
-
+  static char incomingByte;
+  if(micros() < last_micros){//Clock rollover check
+    BMP280_LAST = 0;SAMM8Q_LAST = 0;MPU6050_LAST = 0;BMP180_LAST = 0;AS5600_LAST = 0;}
   if (rfSerial.available() > 0) {//Ping Data From Ground Station
     incomingByte = rfSerial.read();
     rfSerial.print(incomingByte);
     Serial.print(incomingByte);
     commands(incomingByte);
   }
+  static char gps_msg[200] = {};
+  static int gps_msg_index = 0;
+  if (gpsSerial.available() > 0) {//Print gps messages
+    char incomingByte = gpsSerial.read();
+    //Serial.print(incomingByte);
+    gps_msg[gps_msg_index] = incomingByte;
+    gps_msg_index++;
+    if(incomingByte == '\n'){
+      readGPS(gps_msg, gps_msg_index);
+      gps_msg_index = 0;
+    }
+  }
 
-  altitude = (bmp2.readAltitude(102500)+bmp1.readAltitude(1025))/2; /* Adjusted to local forecast! */
-  time_since_launch = millis()/1000;
-  if(lowDataTransfer){
-    Serial.println();
+  time_since_launch = micros()/1000000 - time_launch;
+  if(micros() - BMP280_LAST > BMP280_RATE){
+    altitude = (bmp2.readAltitude(102500)+bmp1.readAltitude(1025))/2; /* Adjusted to local forecast! */
+    BMP280_LAST = micros();
+  }
+  if(lowDataTransfer && (micros() - RFD_LAST > RFD_RATE)){
     char* massage = readyPacket();
     for(int i = 0; i< charArrayLegnth; i++){
       //char aChar = '0' + (i%10);
@@ -180,6 +209,7 @@ void loop() {
       rfSerial.print(*(massage+i));//Send telemetry
     }
     //rfSerial.println();
+    RFD_LAST = micros();
   }
 
 
@@ -209,18 +239,21 @@ void loop() {
   rfSerial.print(" ALT = "); rfSerial.print(bmp.readAltitude()); rfSerial.print("m");
   rfSerial.println();*/
 
-  delay(50);
+  //delay(50);
 }
 
 //==========GPS CODE==========//Based on SparkyVT https://github.com/SparkyVT/HPR-Rocket-Flight-Computer/blob/V4_7_0/Main%20Code/UBLOX_GNSS_Config.ino
 bool initSAM_M8Q(){
   bool gpsReady = 1;
-  gpsSerial.begin(9600);
   //Generate the configuration string for Factory Default Settings
   byte setDefaults[] = {0xB5, 0x62, 0x06, 0x09, 0x0D, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x17, 0x2F, 0xAE};
 
-  Serial.print("Restoring Factory Defaults... ");
-  if(gpsSet(setDefaults) == 3){Serial.println("Restore Defaults Failed!");};
+  gpsSerial.begin(38400);
+  Serial.print("Set Defaults @ 38400 Baud... ");
+  if(gpsSet(setDefaults, sizeof(setDefaults)) == 3){Serial.println("Restore Defaults Failed!");};
+  gpsSerial.begin(9600);
+  Serial.print("Set Defaults @ 9600 Baud... ");
+  if(gpsSet(setDefaults, sizeof(setDefaults)) == 3){Serial.println("Restore Defaults Failed!");};
 
   //10Hz Max data rate for SAM-M8Q
   byte setDataRate[] = {0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0xFA, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x96};
@@ -237,6 +270,7 @@ bool initSAM_M8Q(){
   byte setGSA[] = {0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x31};
   byte setGSV[] = {0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x39};
   byte setVTG[] = {0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x46};
+  byte setGGA[] = {0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x23};
   byte set4_1[] = {0xB5, 0x62, 0x06, 0x17, 0x14, 0x00, 0x00, 0x41, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0x57};
 
   //Generate the configuration string for interference resistance settings
@@ -245,24 +279,26 @@ bool initSAM_M8Q(){
   //For M8 series gps, just add Galileo, from https://portal.u-blox.com/s/question/0D52p00008HKEEYCA5/ublox-gps-galileo-enabling-for-ubx-m8
   byte setSat[] = {0xB5, 0x62, 0x06, 0x3E, 0x0C, 0x00, 0x00, 0x00, 0x20, 0x01, 0x02, 0x04, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x82, 0x56};
 
-  Serial.print("Deactivating NMEA GSA Messages... ");
-  if(gpsSet(setGSA) == 3){gpsReady = 0; Serial.println("NMEA GSA Message Deactivation Failed!");}
+  Serial.print("Deactivating GSA Messages... ");
+  if(gpsSet(setGSA, sizeof(setGSA)) == 3){gpsReady = 0; Serial.println("NMEA GSA Message Deactivation Failed!");}
   Serial.print("Setting Nav Mode... ");
-  if(gpsSet(setNav) == 3){gpsReady = 0; Serial.println("Nav mode Failed!");}
-  Serial.print("Deactivating NMEA GSV Messages... ");
-  if(gpsSet(setGSV) == 3){gpsReady = 0; Serial.println("NMEA GSV Message Deactivation Failed!");}
-  Serial.print("Setting 10Hz data rate... ");
-  if(gpsSet(setDataRate) == 3){gpsReady = 0; Serial.println("Set 10Hz data rate Failed!");}
+  if(gpsSet(setNav, sizeof(setNav)) == 3){gpsReady = 0; Serial.println("Nav mode Failed!");}
+  Serial.print("Deactivating GSV Messages... ");
+  if(gpsSet(setGSV, sizeof(setGSV)) == 3){gpsReady = 0; Serial.println("NMEA GSV Message Deactivation Failed!");}
+  Serial.print("Set 10Hz data rate... ");
+  if(gpsSet(setDataRate, sizeof(setDataRate)) == 3){gpsReady = 0; Serial.println("Set 10Hz data rate Failed!");}
   Serial.print("Activating NMEA 4.1 Messages... ");
-  if(gpsSet(set4_1) == 3){gpsReady = 0; Serial.println("NMEA 4,1 Activation Failed!");}
-  Serial.print("Set Satellite Constelations... ");
-  if(gpsSet(setSat) == 3){gpsReady = 0; Serial.println("Satellite Setting Failed!");}
-  Serial.print("Deactivating NMEA VTG Messages... ");
-  if(gpsSet(setVTG) == 3){gpsReady = 0; Serial.println("NMEA VTG Message Deactivation Failed!");}
+  if(gpsSet(set4_1, sizeof(set4_1)) == 3){gpsReady = 0; Serial.println("NMEA 4,1 Activation Failed!");}
+  Serial.print("Set Satellites... ");
+  if(gpsSet(setSat, sizeof(setSat)) == 3){gpsReady = 0; Serial.println("Satellite Setting Failed!");}
+  Serial.print("Deactivating VTG Messages... ");
+  if(gpsSet(setVTG, sizeof(setVTG)) == 3){gpsReady = 0; Serial.println("NMEA VTG Message Deactivation Failed!");}
   Serial.print("Setting Interference Threshols... ");
-  if(gpsSet(setJam) == 3){gpsReady = 0; Serial.println("Interference Settings Failed!");}
-  Serial.print("Deactivating NMEA GLL Messages... ");
-  if(gpsSet(setGLL) == 3){gpsReady = 0; Serial.println("NMEA GLL Message Deactivation Failed!");}
+  if(gpsSet(setJam, sizeof(setJam)) == 3){gpsReady = 0; Serial.println("Interference Settings Failed!");}
+  Serial.print("Deactivating GLL Messages... ");
+  if(gpsSet(setGLL, sizeof(setGLL)) == 3){gpsReady = 0; Serial.println("NMEA GLL Message Deactivation Failed!");}
+  Serial.print("Deactivating GGA Messages... ");
+  if(gpsSet(setGGA, sizeof(setGGA)) == 3){gpsReady = 0; Serial.println("NMEA GGA Message Deactivation Failed!");}
   
   //Increase Baud-Rate on M8Q for faster GPS updates
   int setSucess = 0;
@@ -270,7 +306,7 @@ bool initSAM_M8Q(){
     Serial.print("Setting Ublox Baud Rate 38400... ");
     sendUBX(setBaudRate, sizeof(setBaudRate));
     setSucess += getUBX_ACK(&setBaudRate[2]);}
-  if (setSucess == 3 ){gpsReady = 0; Serial.println("Ublox Baud Rate 38400 Failed!");}
+  if (setSucess == 3 ){Serial.println("Ublox Baud Rate 38400 Failed!");}
   if(gpsVersion == 2){
     gpsSerial.end();
     gpsSerial.flush();
@@ -278,10 +314,10 @@ bool initSAM_M8Q(){
   }
   return gpsReady;
 }//end ConfigGPS
-int gpsSet(byte* msg){
+int gpsSet(byte* msg, byte size){
   int gpsSetSuccess = 0;
   while(gpsSetSuccess < 3) {
-      sendUBX(msg, sizeof(msg));
+      sendUBX(msg, size);
       gpsSetSuccess += getUBX_ACK(&msg[2]);}
   return gpsSetSuccess;
 }//end gpsSet
@@ -299,8 +335,8 @@ void gpsChecksum(byte *checksumPayload, byte payloadSize) {
 void sendUBX(byte *UBXmsg, byte msgLength) {
   for(int i = 0; i < msgLength; i++) {
     gpsSerial.write(UBXmsg[i]);
-    gpsSerial.flush();}
-    
+    gpsSerial.flush();
+  }
   gpsSerial.println();
   gpsSerial.flush();
 }//end sendUBX
@@ -341,9 +377,55 @@ byte getUBX_ACK(byte *msgID) {
     delay(1000);
     return 1;}
 }//end getACK
-void readGPS(){//W.I.P.
-  
+void readGPS(char* msg, byte size){
+  uint msg_index = 0;
+  uint item_index = 0;
+  uint item_length = 0;
+  static char item[20] = {};
+  if(*msg == '$' && *(msg+1) == 'G' && *(msg+2) == 'N'){//Looks for start of message with "$GN"
+    msg_index += 3;
+    if(*(msg+3) == 'R' && *(msg+4) == 'M' && *(msg+5) == 'C'){//Checks message type
+      msg_index += 4;//Skips the first comma
+      while(msg_index < size){
+        if(*(msg+msg_index) == ','){
+          switch(item_index){
+            case 0: Serial.print("UT:");break;//UNIVERSAL TIME
+            case 1: Serial.print("NAV_STAT:");break;//NAVIGATIONAL STATUS
+            case 2: Serial.print("LAT:");parseLatLong(item, item_length);break;//LATITUDE
+            case 4: Serial.print("LON:");parseLatLong(item, item_length);break;//LONGNITUDE
+            case 6: break;//GROUND SPEED
+            case 7: break;//COURSE
+            case 8: break;//DATE
+          }
+          for(int i = 0; i < item_length; i++){
+            Serial.print(item[i]);
+          }
+          Serial.print('-');
+          item_index++;
+          item_length = 0;
+        }else{
+          item[item_length] = *(msg+msg_index);
+          item_length++;
+        }
+        msg_index++;
+      }
+    }
+  }
+  Serial.println();
 }//end readGPS
+void parseLatLong(char* value, byte size){//W.I.P.
+  static uint hunds, tens, ones;//Converting string to integer
+  if(size == 10){//Latitude
+    tens = *value - '0'; ones = *(value+1) - '0';//Converting string to integer
+    latitude = static_cast<float>(tens*10 + ones);//Converting integer to float
+    Serial.println(latitude);
+  }
+  if(size == 11){//Longitude
+    hunds = *value - '0'; tens = *(value+1) - '0'; ones = *(value+2) - '0';//Converting string to integer
+    longitude = static_cast<float>((hunds*100) + (tens*10) + ones);//Converting integer to float
+    Serial.println(longitude);
+  }
+}
 //============================
 
 //==========RADIO CODE==========Alleon Oxales

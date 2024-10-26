@@ -67,7 +67,7 @@ int bitLengthList[10] = {12,//Seconds since launch
                         };//Represents the number of bits for each part of the data transmission excluding checksum and endchar
 const int bitArrayLength = 112;
 const int charArrayLegnth = bitArrayLength/8 + 3;
-int events[6] = {};
+int my_event_arr[6] = {};
 int errorCodes[32] = {}; //Check document for error code list
 
 //Error codes
@@ -217,8 +217,8 @@ void loop() {
 
 
   /* Read sensor data
-  sensors_event_t accel, gyro, mag, temp;
-  lsm.getEvent(&accel, &gyro, &mag, &temp);
+  sensors__t accel, gyro, mag, temp;
+  lsm.get(&accel, &gyro, &mag, &temp);
   
   // Send data over RFD900 (via SoftwareSerial)
   rfSerial.print("ACCEL "); rfSerial.print(accel.acceleration.x, 2); rfSerial.print(",");
@@ -463,9 +463,9 @@ char* readyPacket(){//Combines telemetry into bit array then convert to char arr
         bitArray[bitIndex] = errorCodes[x];
         bitIndex++;
       }
-    }else if(i == 9){//Deal with event bits
+    }else if(i == 9){//Deal with  bits
       for(int x = 0; x < dataLength; x++){
-        bitArray[bitIndex] = events[x];
+        bitArray[bitIndex] = s[x];
         bitIndex++;
       }
     }
@@ -536,27 +536,38 @@ int* uint_to_binary(char character){
 }//end uint_to_binary
 //==============================
 
-//===========EVENT DETECTION CODE==========Elizabeth McGhee
-/*bool detect_liftoff(){
-  if (altitude > 50.0 and accel.acceleration.y > 2*g){
-    return 1;
-  }else{
-  return 0;}
+// Event Detection ============================================ Elizabeth McGhee WIP
+void event_detection(){
+    float dummy_variable = 0.3; //We don't know this yet
+    float g = 9.81; 
+    // The index is in the following ascending order: liftoff, burnout, apogee, drogue deploy, main deplot, landed
+    // Liftoff =================================================
+    if (altitude > 50.0 and accel.acceleration.y > 2*g){
+        my_event_arr[0] = 1;
+        }else{
+        my_event_arr[0] = 0;
+    }
+    // Burnout =================================================
+    if (altitude > dummy_variables and accel.acceleration.y < g){
+        my_event_arr[1] = 1;
+    } else {
+        my_event_arr[1] = 0;
+    }
+    // Apogee ==================================================
+    if (altitude_rate < 0){
+        my_event_arr[2] = 1;
+    } else {
+        my_event_arr[2] = 0;
+    }
+    // Drogue Deploy ===========================================
+    // Main Deploy =============================================
+    // Landed ==================================================
+    if (altitude < 50.0){
+        my_event_arr[3] = 1;
+    }else {
+        my_event_arr[3] = 0;
+    }  
 }
-bool detect_burnout(){
-  float dummy_variable = 0.3; //We don't know this yet
-  float g = 9.81; 
-  if (altitude > dummy_variables and accel.acceleration.y < g){
-    return 1;
-  } else {
-    return 0;}
-}*/
-bool detect_landing(){
-  if (altitude < 50.0){
-    return 1;
-  } else {
-  return 0;}  
-}//end detect_landing
 bool detect_good_shutdown(){//Alleon Oxales
   for(int i = 0; i < 3; i++){
     int value = EEPROM.read(i);

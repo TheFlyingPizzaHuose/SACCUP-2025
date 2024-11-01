@@ -37,6 +37,10 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 
 bool debug = 0;
 
+//pin assignments
+const int lowpower_pin = 2;
+const int shutdown_pin = 3;
+
 //SD card variables 
 const int sdSelect = 10;
 char* logFileName;
@@ -145,82 +149,107 @@ float pos[3] = {0,0,0},//Absolute position measurements
       d2_rot[3] = {0,0,0};//2nd Derivative rotation measurements
 void setup() {
   Serial.begin(57600);// Start hardware serial communication (for debugging)
+  rfSerial.begin(57600);//Init RFD UART
   Serial.println("Initializing");
   Wire.begin();
   Wire1.begin();
+  pinMode(lowpower_pin, OUTPUT);
+  pinMode(shutdown_pin, OUTPUT);
   
-  if(true || detect_good_shutdown()){
-    
-    rfSerial.begin(57600);//Init RFD UART
-    Serial.println("Software serial initialized.");
-
-    if (!initSAM_M8Q()) {setErr(SAMM8Q_FAIL);}//Init SAM_M8Q and error if fails
-    if (!mpu.begin()) {setErr(MPU6050_FAIL);}//Init MPU6050 and error if fails   
-    
-    if (!lsm.begin()) {setErr(LSM9SD1_FAIL);}//Init LSM9SD1 and error if fails
-    setupLSM();//Setups LSM range of measurement
-    if (!bmp1.begin()) {setErr(BMP280_FAIL);}//Init BMP280 and error if fails  
-    if (!bmp2.begin(3, &Wire1)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_1_FAIL);}//Init BMP280 and error if fails   
-    if (!SD.begin(sdSelect)) {setErr(SD_FAIL);}//Init SD reader and error if fails
-
-    logFileName = checkFile(); //Looks for log files already present
-    logfile = SD.open(logFileName, FILE_WRITE);
-    logfile.println("micros, bmp_alt (m), bmp_pressure (Pa), bmp_temp (C), solenoid state, launch detected, apogee detected, landed, ground detection count"); // write header at top of log file
-    logfile.close();
+  if(detect_good_shutdown()){
+    normalStart();
   }else{
     setErr(MAIN_PWR_FAULT);
   }
 }
 
 void loop() {
-  static char incomingByte;
-  if(micros() < last_micros){//Clock rollover check
-    BMP280_LAST = 0;SAMM8Q_LAST = 0;MPU6050_LAST = 0;BMP180_LAST = 0;AS5600_LAST = 0;LSM_LAST = 0;}
-  if (rfSerial.available() > 0) {//Ping Data From Ground Station
-    incomingByte = rfSerial.read();
-    rfSerial.print(incomingByte);
-    Serial.print(incomingByte);
-    commands(incomingByte);
-  }
-  static char gps_msg[200] = {};
-  static int gps_msg_index = 0;
-  if (gpsSerial.available() > 0) {//Print gps messages
-    char incomingByte = gpsSerial.read();
-    //Serial.print(incomingByte);
-    gps_msg[gps_msg_index] = incomingByte;
-    gps_msg_index++;
-    if(incomingByte == '\n'){
-      readGPS(gps_msg, gps_msg_index);
-      gps_msg_index = 0;
+  if(shutdownCheck[0] == 0xff && shutdownCheck[1] == 0xff && shutdownCheck[2] == 0xff){//Shutdown Mode
+    digitalWrite(shutdown_pin, HIGH);
+  }else if(!errorCodes[MAIN_PWR_FAULT] && !lowPower){//Normal Mode
+    if(micros() < last_micros){//Clock rollover check
+      BMP280_LAST = 0;SAMM8Q_LAST = 0;MPU6050_LAST = 0;BMP180_LAST = 0;AS5600_LAST = 0;LSM_LAST = 0;}
+
+    readRadio();
+
+    static char gps_msg[200] = {};
+    static int gps_msg_index = 0;
+    if (gpsSerial.available() > 0) {//Print gps messages
+      char incomingByte = gpsSerial.read();
+      //Serial.print(incomingByte);
+      gps_msg[gps_msg_index] = incomingByte;
+      gps_msg_index++;
+      if(incomingByte == '\n'){
+        readGPS(gps_msg, gps_msg_index);
+        gps_msg_index = 0;
+      }
+    }
+
+    time_since_launch = micros()/1000000 - time_launch;
+    if(micros() - BMP280_LAST > BMP280_RATE){
+      altitude = (bmp2.readAltitude(102500)+bmp1.readAltitude(1025))/2; /* Adjusted to local forecast! */
+      if(debug){Serial.print("BMP_ALT: ");Serial.println(altitude);Serial.print("||||");}
+      BMP280_LAST = micros();
+    }
+    if(micros() - LSM_LAST > LSM_RATE){
+      readLSM();
+      LSM_LAST = micros();
+    }
+    if(lowDataTransfer && (micros() - RFD_LAST > RFD_RATE)){
+      if(debug){printErr();}//Outputs error codes to serial
+      char* massage = readyPacket();
+      /*int* bins = uint_to_binary(*(massage+i));
+      for(int x = 0; x<8; x++){
+        //Serial.print(*(bins+x));
+      }*/
+      for(int i = 0; i< charArrayLegnth; i++){
+        rfSerial.print(*(massage+i));//Send telemetry
+        if(debug){Serial.print(*(massage+i));}
+      }
+      if(debug){Serial.print("||||");}
+
+      RFD_LAST = micros();
+    }
+  }else if(lowPower){//Low Power Mode
+    digitalWrite(lowpower_pin, HIGH);
+    readRadio();
+  }else{//Recovery Mode 
+    dynamicStart();
+    readRadio();
+    if((micros() - RFD_LAST > RFD_RATE)){
+      char* massage = readyPacket();
+      for(int i = 0; i< charArrayLegnth; i++){
+        rfSerial.print(*(massage+i));//Send telemetry
+      }
+      RFD_LAST = micros();
     }
   }
+}
 
-  time_since_launch = micros()/1000000 - time_launch;
-  if(micros() - BMP280_LAST > BMP280_RATE){
-    altitude = (bmp2.readAltitude(102500)+bmp1.readAltitude(1025))/2; /* Adjusted to local forecast! */
-    if(debug){Serial.print("BMP_ALT: ");Serial.println(altitude);Serial.print("||||");}
-    BMP280_LAST = micros();
-  }
-  if(micros() - LSM_LAST > LSM_RATE){
-    readLSM();
-    LSM_LAST = micros();
-  }
-  if(lowDataTransfer && (micros() - RFD_LAST > RFD_RATE)){
-    char* massage = readyPacket();
-    /*int* bins = uint_to_binary(*(massage+i));
-    for(int x = 0; x<8; x++){
-      //Serial.print(*(bins+x));
-    }*/
-    for(int i = 0; i< charArrayLegnth; i++){
-      rfSerial.print(*(massage+i));//Send telemetry
-      if(debug){Serial.print(*(massage+i));}
-    }
-    if(debug){Serial.print("||||");}
+//==========START SEQUENCES==========Alleon Oxales
+void normalStart(){
+  EEPROM.write(0,0);//Reset shutdown check
+  EEPROM.write(1,0);
+  EEPROM.write(2,0);
 
-    RFD_LAST = micros();
-  }
+  Serial.println("NORM_START");
 
-  printErr();//Outputs error codes to serial
+  if (!initSAM_M8Q()) {setErr(SAMM8Q_FAIL);}//Init SAM_M8Q and error if fails
+  if (!mpu.begin()) {setErr(MPU6050_FAIL);}//Init MPU6050 and error if fails   
+  
+  if (!lsm.begin()) {setErr(LSM9SD1_FAIL);}//Init LSM9SD1 and error if fails
+  setupLSM();//Setups LSM range of measurement
+  if (!bmp1.begin()) {setErr(BMP280_FAIL);}//Init BMP280 and error if fails  
+  if (!bmp2.begin(3, &Wire1)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_1_FAIL);}//Init BMP280 and error if fails   
+  if (!SD.begin(sdSelect)) {setErr(SD_FAIL);}//Init SD reader and error if fails
+
+  logFileName = checkFile(); //Looks for log files already present
+  logfile = SD.open(logFileName, FILE_WRITE);
+  logfile.println("micros, bmp_alt (m), bmp_pressure (Pa), bmp_temp (C), solenoid state, launch detected, apogee detected, landed, ground detection count"); // write header at top of log file
+  logfile.close();
+}
+void dynamicStart(){//W.I.P.
+
 }
 
 //==========GPS CODE==========//Based on SparkyVT https://github.com/SparkyVT/HPR-Rocket-Flight-Computer/blob/V4_7_0/Main%20Code/UBLOX_GNSS_Config.ino
@@ -282,17 +311,14 @@ bool initSAM_M8Q(){
   if(gpsSet(setGGA, sizeof(setGGA)) == 3){gpsReady = 0; Serial.println("NMEA GGA Message Deactivation Failed!");}
   
   //Increase Baud-Rate on M8Q for faster GPS updates
-  int setSucess = 0;
-  while(gpsVersion == 2 && setSucess < 3) {
-    Serial.print("Setting Ublox Baud Rate 38400... ");
-    sendUBX(setBaudRate, sizeof(setBaudRate));
-    setSucess += getUBX_ACK(&setBaudRate[2]);}
-  if (setSucess == 3 ){Serial.println("Ublox Baud Rate 38400 Failed!");}
-  if(gpsVersion == 2){
-    gpsSerial.end();
-    gpsSerial.flush();
-    gpsSerial.begin(38400);
-  }
+  //int setSucess = 0;
+  Serial.print("Setting Ublox Baud Rate 38400... ");
+  sendUBX(setBaudRate, sizeof(setBaudRate));
+  //setSucess += getUBX_ACK(&setBaudRate[2]);
+  //if (setSucess == 3 ){Serial.println("Ublox Baud Rate 38400 Failed!");}
+  gpsSerial.end();
+  gpsSerial.flush();
+  gpsSerial.begin(38400);
   return gpsReady;
 }//end ConfigGPS
 int gpsSet(byte* msg, byte size){
@@ -336,9 +362,9 @@ byte getUBX_ACK(byte *msgID) {
         ackPacket[i] = incoming_char;
         i++;}}
     if (i > 9) break;
-    if ((millis() - ackWait) > 1500) {
+    if ((millis() - ackWait) > 500) {
       Serial.println("ACK Timeout");
-      return 5;}
+      return 5;} 
     if (i == 4 && ackPacket[3] == 0x00) {
       Serial.println("NAK Received");
       return 1;}}
@@ -355,7 +381,7 @@ byte getUBX_ACK(byte *msgID) {
   else {
     Serial.print("ACK Checksum Failure: ");
     //printHex(ackPacket, sizeof(ackPacket));
-    delay(1000);
+    //delay(1000); Removed to reduce startup time
     return 1;}
 }//end getACK
 void readGPS(char* msg, byte size){//Alleon Oxales
@@ -412,6 +438,14 @@ void parseLatLong(char* value, byte size){//Alleon Oxales W.I.P.
 //============================
 
 //==========RADIO CODE==========Alleon Oxales
+void readRadio(){
+  if (rfSerial.available() > 0) {//Ping Data From Ground Station
+    char incomingByte = rfSerial.read(); //Do not make this static
+    rfSerial.print(incomingByte);
+    if(debug){Serial.print(incomingByte);}
+    commands(incomingByte);
+  }
+}
 char* readyPacket(){//Combines telemetry into bit array then convert to char array
   int bitArray[bitArrayLength] = {};
   static char charArray[charArrayLegnth]  {}; //+1 to include checksum byte, static so that the mem alloc is retained throughout the program
@@ -640,13 +674,13 @@ void setErr(int errorCode){
 void clearErr(int errorCode){
   errorCodes[errorCode] = 0;
 }//end clearErr
-void commands(int command){//Alleon Oxales
+void commands(char command){//Alleon Oxales
   if(shutdownCheck[2] == 0 && millis() - time_last_command > 1000){
     shutdownCheck[0] = 0;shutdownCheck[1] = 0;shutdownCheck[2] = 0;//Reset shutdown checks after 1s timeout
   }
   switch(command){//Check for commands
     case 0xff:
-      for(int i = 0; i < 3; i++){ 
+      for(int i = 0; i < 3; i++){//Set the latest shutdownCheck
         if(shutdownCheck[i] == 0){
           shutdownCheck[i] = 0xFF;
           break;
@@ -656,13 +690,14 @@ void commands(int command){//Alleon Oxales
         EEPROM.write(0,0xff);
         EEPROM.write(1,0xff);
         EEPROM.write(2,0xff);
+        if(debug){Serial.println("Shutdown!");}
       }
       break;
     case 0x01:
       lowPower = 1;
       break;
     case 0x02:
-      lowPower = 2;
+      lowPower = 0;
       break;
     case 0x03:
       lowDataTransfer = 0;
@@ -671,7 +706,16 @@ void commands(int command){//Alleon Oxales
       lowDataTransfer = 1;
       break;
     case 0x05:
-      break;    
+      normalStart();
+      errorCodes[MAIN_PWR_FAULT] = 0;
+      break;
+    case 0x06:
+      break;
+    case 0x07:
+      break;
+    case 0x08:
+      debug = !debug;
+      break;  
   }
   time_last_command = millis();
 }
@@ -698,35 +742,35 @@ void printErr(){
   for(int i = 0; i < 32; i++){
     int check = i + errorCodes[i]*32;
     switch(check){
-      case PRGM_ERR+32:Serial.print("PRGM_ERR--");break;
-      case ALT_OUT_RANGE+32:Serial.print("ALT_OUT_RANGE--");break;
-      case LAT_OUT_RANGE+32:Serial.print("LAT_OUT_RANGE--");break;
-      case LONG_OUT_RANGE + 32: Serial.print("LONG_OUT_RANGE--"); break;
-      case VEL_OUT_RANGE + 32: Serial.print("VEL_OUT_RANGE--"); break;
-      case ORIENT_X_OUT_RANGE + 32: Serial.print("ORIENT_X_OUT_RANGE--"); break;
-      case ORIENT_Y_OUT_RANGE + 32: Serial.print("ORIENT_Y_OUT_RANGE--"); break;
-      case BMP280_ERR_DAT + 32: Serial.print("BMP280_ERR_DAT--"); break;
-      case SAMM8Q_ERR_DAT + 32: Serial.print("SAMM8Q_ERR_DAT--"); break;
-      case MPU6050_ERR_DAT + 32: Serial.print("MPU6050_ERR_DAT--"); break;
-      case BMP180_1_ERR_DAT + 32: Serial.print("BMP180_1_ERR_DAT--"); break;
-      case BMP180_2_ERR_DAT + 32: Serial.print("BMP180_2_ERR_DAT--"); break;
-      case AS5600_1_ERR_DAT + 32: Serial.print("AS5600_1_ERR_DAT--"); break;
-      case AS5600_2_ERR_DAT + 32: Serial.print("AS5600_2_ERR_DAT--"); break;
-      case TELEM_PWR_FAULT + 32: Serial.print("TELEM_PWR_FAULT--"); break;
-      case VIDEO_PWR_FAULT + 32: Serial.print("VIDEO_PWR_FAULT--"); break;
-      case MAIN_PWR_FAULT + 32: Serial.print("MAIN_PWR_FAULT--"); break;
-      case BMP280_FAIL + 32: Serial.print("BMP280_FAIL--"); break;
-      case SAMM8Q_FAIL + 32: Serial.print("SAMM8Q_FAIL--"); break;
-      case MPU6050_FAIL + 32: Serial.print("MPU6050_FAIL--"); break;
-      case BMP180_1_FAIL + 32: Serial.print("BMP180_1_FAIL--"); break;
-      case BMP180_2_FAIL + 32: Serial.print("BMP180_2_FAIL--"); break;
-      case AS5600_1_FAIL + 32: Serial.print("AS5600_1_FAIL--"); break;
-      case AS5600_2_FAIL + 32: Serial.print("AS5600_2_FAIL--"); break;
-      case SD_FAIL + 32: Serial.print("SD_FAIL--"); break;
-      case RFD900_FAIL + 32: Serial.print("RFD900_FAIL--"); break;
-      case RFM9X_FAIL + 32: Serial.print("RFM9X_FAIL--"); break;
-      case ADXL345_FAIL + 32: Serial.print("ADXL345_FAIL--"); break;
-      case LSM9SD1_FAIL + 32: Serial.print("LSM9SD1_FAIL--"); break;
+      case PRGM_ERR+32:Serial.print("PRGM_ERR  ");break;
+      case ALT_OUT_RANGE+32:Serial.print("ALT_OUT_RANGE  ");break;
+      case LAT_OUT_RANGE+32:Serial.print("LAT_OUT_RANGE  ");break;
+      case LONG_OUT_RANGE + 32: Serial.print("LONG_OUT_RANGE  "); break;
+      case VEL_OUT_RANGE + 32: Serial.print("VEL_OUT_RANGE  "); break;
+      case ORIENT_X_OUT_RANGE + 32: Serial.print("ORIENT_X_OUT_RANGE  "); break;
+      case ORIENT_Y_OUT_RANGE + 32: Serial.print("ORIENT_Y_OUT_RANGE  "); break;
+      case BMP280_ERR_DAT + 32: Serial.print("BMP280_ERR_DAT  "); break;
+      case SAMM8Q_ERR_DAT + 32: Serial.print("SAMM8Q_ERR_DAT  "); break;
+      case MPU6050_ERR_DAT + 32: Serial.print("MPU6050_ERR_DAT  "); break;
+      case BMP180_1_ERR_DAT + 32: Serial.print("BMP180_1_ERR_DAT  "); break;
+      case BMP180_2_ERR_DAT + 32: Serial.print("BMP180_2_ERR_DAT  "); break;
+      case AS5600_1_ERR_DAT + 32: Serial.print("AS5600_1_ERR_DAT  "); break;
+      case AS5600_2_ERR_DAT + 32: Serial.print("AS5600_2_ERR_DAT  "); break;
+      case TELEM_PWR_FAULT + 32: Serial.print("TELEM_PWR_FAULT  "); break;
+      case VIDEO_PWR_FAULT + 32: Serial.print("VIDEO_PWR_FAULT  "); break;
+      case MAIN_PWR_FAULT + 32: Serial.print("MAIN_PWR_FAULT  "); break;
+      case BMP280_FAIL + 32: Serial.print("BMP280_FAIL  "); break;
+      case SAMM8Q_FAIL + 32: Serial.print("SAMM8Q_FAIL  "); break;
+      case MPU6050_FAIL + 32: Serial.print("MPU6050_FAIL  "); break;
+      case BMP180_1_FAIL + 32: Serial.print("BMP180_1_FAIL  "); break;
+      case BMP180_2_FAIL + 32: Serial.print("BMP180_2_FAIL  "); break;
+      case AS5600_1_FAIL + 32: Serial.print("AS5600_1_FAIL  "); break;
+      case AS5600_2_FAIL + 32: Serial.print("AS5600_2_FAIL  "); break;
+      case SD_FAIL + 32: Serial.print("SD_FAIL  "); break;
+      case RFD900_FAIL + 32: Serial.print("RFD900_FAIL  "); break;
+      case RFM9X_FAIL + 32: Serial.print("RFM9X_FAIL  "); break;
+      case ADXL345_FAIL + 32: Serial.print("ADXL345_FAIL  "); break;
+      case LSM9SD1_FAIL + 32: Serial.print("LSM9SD1_FAIL  "); break;
     }
   }
   Serial.println();

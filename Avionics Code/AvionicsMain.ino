@@ -42,14 +42,14 @@ const int lowpower_pin = 2;
 const int shutdown_pin = 3;
 
 //SD card variables 
-const int sdSelect = 10;
+const int sdSelect = BUILTIN_SDCARD;
 char* logFileName;
 File logfile;
 
 // Create the sensor objects
 Adafruit_MPU6050 mpu; //Accelerometer
 Adafruit_BMP280 bmp1(&Wire); //Pitot Tube Pressure Sensor
-Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(&Wire1);
+Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(&Wire);
 static sensors_event_t LSM_acc, LSM_gyro, LSM_mag, LSM_temp;
 Adafruit_BMP085 bmp2;
 
@@ -202,9 +202,10 @@ void loop() {
       for(int x = 0; x<8; x++){
         //Serial.print(*(bins+x));
       }*/
+      rfSerial.flush();
       for(int i = 0; i< charArrayLegnth; i++){
         rfSerial.print(*(massage+i));//Send telemetry
-        if(debug){Serial.print(*(massage+i));}
+        //if(debug){Serial.print(*(massage+i));}
       }
       if(debug){Serial.print("||||");}
 
@@ -218,6 +219,7 @@ void loop() {
     readRadio();
     if((micros() - RFD_LAST > RFD_RATE)){
       char* massage = readyPacket();
+      rfSerial.flush();
       for(int i = 0; i< charArrayLegnth; i++){
         rfSerial.print(*(massage+i));//Send telemetry
       }
@@ -228,14 +230,10 @@ void loop() {
 
 //==========START SEQUENCES==========Alleon Oxales
 void normalStart(){
-  EEPROM.write(0,0);//Reset shutdown check
-  EEPROM.write(1,0);
-  EEPROM.write(2,0);
-
   Serial.println("NORM_START");
 
   if (!initSAM_M8Q()) {setErr(SAMM8Q_FAIL);}//Init SAM_M8Q and error if fails
-  if (!mpu.begin()) {setErr(MPU6050_FAIL);}//Init MPU6050 and error if fails   
+  if (!mpu.begin(104, &Wire1)) {setErr(MPU6050_FAIL);}//Init MPU6050 and error if fails   
   
   if (!lsm.begin()) {setErr(LSM9SD1_FAIL);}//Init LSM9SD1 and error if fails
   setupLSM();//Setups LSM range of measurement

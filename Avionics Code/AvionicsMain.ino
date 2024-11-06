@@ -23,6 +23,10 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 #include <cmath>
 #include <iostream>
 #include <EEPROM.h>
+#include <uRTCLib.h>
+
+uRTCLib rtc(0x68);//Real time clock I2C address
+char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 
 #define AS5600_ADDR 0x36
 #define RAW_ANGLE_REG 0x0C
@@ -113,7 +117,7 @@ uint BMP280_RATE = 37500,//Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5,
     SAMM8Q_RATE = 100000,
     MPU6050_RATE = 9,
     BMP180_RATE = 17,//Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
-    AS5600_RATE = 12,
+    AS5600_RATE = 5000,
     RFD_RATE = 50000,
     LSM_RATE = 40000;
 
@@ -155,7 +159,10 @@ void setup() {
   Wire1.begin();
   pinMode(lowpower_pin, OUTPUT);
   pinMode(shutdown_pin, OUTPUT);
-  
+
+  URTCLIB_WIRE.begin();
+  //rtc.set(0, 15, 17, 3, 5, 11, 24);// Set the time rtc.set(second, minute, hour, dayOfWeek, dayOfMonth, month, year) (1=Sunday, 7=Saturday)
+
   if(detect_good_shutdown()){
     normalStart();
   }else{
@@ -186,6 +193,10 @@ void loop() {
     }
 
     time_since_launch = micros()/1000000 - time_launch;
+    if(micros() - AS5600_LAST > AS5600_RATE){  
+      Serial.println(readRawAngle());
+      AS5600_LAST = micros();
+    }
     if(micros() - BMP280_LAST > BMP280_RATE){
       altitude = (bmp2.readAltitude(102500)+bmp1.readAltitude(1025))/2; /* Adjusted to local forecast! */
       if(debug){Serial.print("BMP_ALT: ");Serial.println(altitude);Serial.print("||||");}
@@ -208,7 +219,7 @@ void loop() {
         //if(debug){Serial.print(*(massage+i));}
       }
       if(debug){Serial.print("||||");}
-
+      //printRTC();
       RFD_LAST = micros();
     }
   }else if(lowPower){//Low Power Mode
@@ -772,4 +783,24 @@ void printErr(){
     }
   }
   Serial.println();
+}
+void printRTC(){
+  rtc.refresh();
+
+  Serial.print("Current Date & Time: ");
+  Serial.print(rtc.year());
+  Serial.print('/');
+  Serial.print(rtc.month());
+  Serial.print('/');
+  Serial.print(rtc.day());
+
+  Serial.print(" (");
+  Serial.print(daysOfTheWeek[rtc.dayOfWeek()-1]);
+   Serial.print(") ");
+
+  Serial.print(rtc.hour());
+  Serial.print(':');
+  Serial.print(rtc.minute());
+  Serial.print(':');
+  Serial.println(rtc.second());
 }

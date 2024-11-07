@@ -146,7 +146,7 @@ const int PRGM_ERR = 0,
 uint BMP280_RATE = 37500,//Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5, Ultra High: 37.5
     SAMM8Q_RATE = 100000,
     MPU6050_RATE = 9,
-    BMP180_RATE = 50000,//Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
+    BMP180_RATE = 17000,//Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
     AS5600_RATE = 5000,
     RFD_RATE = 50000,
     LSM_RATE = 40000,
@@ -268,9 +268,8 @@ void loop() {
       BMP280_LAST = micros();
     }
     if(micros() - BMP180_LAST > BMP180_RATE){
-      //BMP180_1_PRESS = bmp2.readPressure();
+      BMP180_1_PRESS = bmp2.readPressure();
       BMP180_2_PRESS = bmp3.readPressure();
-      Serial.println(BMP180_2_PRESS);
       BMP180_LAST = micros();
     }
     
@@ -279,7 +278,7 @@ void loop() {
       LSM_LAST = micros();
     }
     if(micros() - ADXL345_LAST > ADXL345_RATE){
-      //readADXL();
+      readADXL();
       ADXL345_LAST = micros();
     }
     if(lowDataTransfer){
@@ -315,11 +314,11 @@ void normalStart(){
   
   logfile = SD.open(checkFile(), FILE_WRITE);//Opens new file with highest index
   long epochTime = epoch();
-  //Print epoch bytes to logfile 
-  logfile.print((byte)((epochTime >> 24) & 0xFF));
-  logfile.print((byte)((epochTime >> 16) & 0xFF));
-  logfile.print((byte)((epochTime >> 8) & 0xFF));
-  logfile.println((byte)(epochTime & 0xFF));
+  //Print epoch bytes to logfile
+  logfile.print((char)((epochTime >> 24) & 0xFF));
+  logfile.print((char)((epochTime >> 16) & 0xFF));
+  logfile.print((char)((epochTime >> 8) & 0xFF));
+  logfile.println((char)(epochTime & 0xFF));
   logfile.print("TIME(us), BMP280_PRESS, LAT, LON, MPU_AX, MPU_AY, MPU_AZ, BMP180_1_PRESS"); 
   logfile.print("BMP180_2_PRESS, AS5600_1_ANG, AS5600_2_ANG, ADXL345_AX, ADXL345_AY");
   logfile.println("ADXL345_AZ, LSM_AX, LSM_AY, LSM_AZ"); // write header at top of log file
@@ -516,16 +515,16 @@ void parseLatLong(char* value, byte size){//Alleon Oxales W.I.P.
 
 //==========RADIO CODE==========Alleon Oxales
 void readRadio(){
-  if(debug){printErr();}//Outputs error codes to serial
-      char* massage = readyPacket();
-      rfSerial.flush();
-      for(int i = 0; i< charArrayLegnth; i++){
-        rfSerial.print(*(massage+i));//Send telemetry
-      }
+  if (rfSerial.available() > 0) {//Ping Data From Ground Station
+    char incomingByte = rfSerial.read(); //Do not make this static
+    rfSerial.print(incomingByte);
+    if(debug){Serial.print(incomingByte);}
+    commands(incomingByte);
+  }
 }
 void sendRadio(){
   if((micros() - RFD_LAST > RFD_RATE)){
-    static char* massage = readyPacket();
+    char* massage = readyPacket();
     rfSerial.flush();
     for(int i = 0; i< charArrayLegnth; i++){
       rfSerial.print(*(massage+i));//Send telemetry

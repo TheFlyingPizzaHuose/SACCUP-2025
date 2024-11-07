@@ -20,10 +20,12 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 #include <Adafruit_MPU6050.h> // MPU6050 accelerometer sensor library
 #include <Adafruit_Sensor.h> // Adafruit unified sensor library
 #include <Adafruit_LSM9DS1.h> // Include LSM9DS1 library
+#include <Adafruit_ADXL375.h> // Incluse ADXL375 library
 #include <cmath>
 #include <iostream>
 #include <EEPROM.h>
 #include <uRTCLib.h>
+#include <time.h>
 
 uRTCLib rtc(0x68);//Real time clock I2C address
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
@@ -50,12 +52,40 @@ const int sdSelect = BUILTIN_SDCARD;
 char* logFileName;
 File logfile;
 
+char* checkFile(bool mode = 0){//Alleon Oxales
+  int fileExists = 1;
+  int fileNum = 0;
+  static char fileName[8] = "000.txt";
+  while(fileExists){
+    fileName[0] = '0' + fileNum/100;
+    fileName[1] = '0' + (fileNum%100)/10;
+    fileName[2] = '0' + fileNum%10;
+    File checkfile = SD.open(fileName);
+    checkfile.seek(1 * 6);
+    String content = checkfile.readStringUntil('\r');
+    if(content != ""){
+      fileNum++;
+    }else{
+      fileExists = 0;
+    }
+  }
+  if(mode){
+    if(fileNum>0){fileNum--;}
+    fileName[0] = '0' + fileNum/100;
+    fileName[1] = '0' + (fileNum%100)/10;
+    fileName[2] = '0' + fileNum%10;
+  }
+  return fileName;
+}//end checkFile
+
 // Create the sensor objects
 Adafruit_MPU6050 mpu; //Accelerometer
 Adafruit_BMP280 bmp1(&Wire); //Pitot Tube Pressure Sensor
 Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(&Wire);
 static sensors_event_t LSM_acc, LSM_gyro, LSM_mag, LSM_temp;
 Adafruit_BMP085 bmp2;
+Adafruit_BMP085 bmp3;
+Adafruit_ADXL375 adxl = Adafruit_ADXL375(12345);
 
 int gpsVersion = 2; //SAM-M8Q
 
@@ -109,7 +139,7 @@ const int PRGM_ERR = 0,
     SD_FAIL = 24,
     RFD900_FAIL = 25,
     RFM9X_FAIL = 26,
-    ADXL345_FAIL = 27,
+    ADXL375_FAIL = 27,
     LSM9SD1_FAIL = 28;
 
 //Component cycle time micros
@@ -119,7 +149,8 @@ uint BMP280_RATE = 37500,//Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5,
     BMP180_RATE = 17,//Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
     AS5600_RATE = 5000,
     RFD_RATE = 50000,
-    LSM_RATE = 40000;
+    LSM_RATE = 40000,
+    ADXL345_RATE = 0;
 
 //Component last cycle time micros
 uint BMP280_LAST = 0,
@@ -128,7 +159,8 @@ uint BMP280_LAST = 0,
     BMP180_LAST = 0,
     AS5600_LAST = 0,
     RFD_LAST = 0,
-    LSM_LAST = 0;
+    LSM_LAST = 0,
+    ADXL345_LAST = 0;
 
 //Time variables
 uint time_launch = 0;
@@ -136,6 +168,7 @@ uint last_millis = 0;
 uint last_micros = 0;
 float time_since_launch = 0;//seconds
 
+//Telemetry Variables
 int sender_indent = 1;//0: Avionics 1: Payload drone
 float altitude = 0,//meters
       latitude = 0,//meters
@@ -143,6 +176,34 @@ float altitude = 0,//meters
       velocity = 0,//meters per second
       orientationX = 0,//degrees
       orientationY = 0;//degrees
+
+//Sensor Data
+float BMP280_PRESS = 0,
+      GPS_LAT = 0,
+      GPS_LON = 0,
+      MPU_AX = 0,
+      MPU_AY = 0,
+      MPU_AZ = 0,
+      MPU_GX = 0,
+      MPU_GY = 0,
+      MPU_GZ = 0,
+      BMP180_1_PRESS = 0,
+      BMP180_2_PRESS = 0,
+      AS5600_1_ANG = 0,
+      AS5600_2_ANG = 0,
+      ADXL345_AX = 0,
+      ADXL345_AY = 0,
+      ADXL345_AZ = 0,
+      LSM_AX = 0,
+      LSM_AY = 0,
+      LSM_AZ = 0,
+      LSM_GX = 0,
+      LSM_GY = 0,
+      LSM_GZ = 0,
+      LSM_MX = 0,
+      LSM_MY = 0,
+      LSM_MZ = 0;
+
 
 //Kinematics variables
 float pos[3] = {0,0,0},//Absolute position measurements
@@ -163,6 +224,7 @@ void setup() {
   URTCLIB_WIRE.begin();
   //rtc.set(0, 15, 17, 3, 5, 11, 24);// Set the time rtc.set(second, minute, hour, dayOfWeek, dayOfMonth, month, year) (1=Sunday, 7=Saturday)
 
+  if (!SD.begin(sdSelect)) {setErr(SD_FAIL);}//Init SD, this comes first to be able to check the latest log file
   if(detect_good_shutdown()){
     normalStart();
   }else{
@@ -192,35 +254,36 @@ void loop() {
       }
     }
 
+    //At each sample, this also checks if the sensor has failed.
     time_since_launch = micros()/1000000 - time_launch;
-    if(micros() - AS5600_LAST > AS5600_RATE){  
-      Serial.println(readRawAngle());
+    if(micros() - AS5600_LAST > AS5600_RATE){
+      AS5600_1_ANG = readRawAngle(&Wire); 
+      AS5600_2_ANG = readRawAngle(&Wire1); 
+      if(AS5600_1_ANG<0){setErr(AS5600_1_FAIL);} else{clearErr(AS5600_2_FAIL);}
+      if(AS5600_2_ANG<0){setErr(AS5600_2_FAIL);} else{clearErr(AS5600_2_FAIL);}
       AS5600_LAST = micros();
     }
     if(micros() - BMP280_LAST > BMP280_RATE){
-      altitude = (bmp2.readAltitude(102500)+bmp1.readAltitude(1025))/2; /* Adjusted to local forecast! */
-      if(debug){Serial.print("BMP_ALT: ");Serial.println(altitude);Serial.print("||||");}
+      BMP280_PRESS = bmp1.readPressure();
+      BMP280_LAST = micros();
+    }
+    if(micros() - BMP180_LAST > BMP180_RATE){
+      BMP180_1_PRESS = bmp2.readPressure();
+      BMP180_2_PRESS = bmp3.readPressure();
       BMP280_LAST = micros();
     }
     if(micros() - LSM_LAST > LSM_RATE){
       readLSM();
       LSM_LAST = micros();
     }
-    if(lowDataTransfer && (micros() - RFD_LAST > RFD_RATE)){
-      if(debug){printErr();}//Outputs error codes to serial
-      char* massage = readyPacket();
-      /*int* bins = uint_to_binary(*(massage+i));
-      for(int x = 0; x<8; x++){
-        //Serial.print(*(bins+x));
-      }*/
-      rfSerial.flush();
-      for(int i = 0; i< charArrayLegnth; i++){
-        rfSerial.print(*(massage+i));//Send telemetry
-        //if(debug){Serial.print(*(massage+i));}
-      }
+    if(micros() - ADXL345_LAST > ADXL345_RATE){
+      readADXL();
+      ADXL345_LAST = micros();
+    }
+    if(lowDataTransfer){
+      sendRadio();
       if(debug){Serial.print("||||");}
       //printRTC();
-      RFD_LAST = micros();
     }
   }else if(lowPower){//Low Power Mode
     digitalWrite(lowpower_pin, HIGH);
@@ -228,14 +291,7 @@ void loop() {
   }else{//Recovery Mode 
     dynamicStart();
     readRadio();
-    if((micros() - RFD_LAST > RFD_RATE)){
-      char* massage = readyPacket();
-      rfSerial.flush();
-      for(int i = 0; i< charArrayLegnth; i++){
-        rfSerial.print(*(massage+i));//Send telemetry
-      }
-      RFD_LAST = micros();
-    }
+    sendRadio();
   }
 }
 
@@ -243,18 +299,27 @@ void loop() {
 void normalStart(){
   Serial.println("NORM_START");
 
-  if (!initSAM_M8Q()) {setErr(SAMM8Q_FAIL);}//Init SAM_M8Q and error if fails
-  if (!mpu.begin(104, &Wire1)) {setErr(MPU6050_FAIL);}//Init MPU6050 and error if fails   
-  
-  if (!lsm.begin()) {setErr(LSM9SD1_FAIL);}//Init LSM9SD1 and error if fails
+  //Initialize sensor ____ and set error if it fails
+  if (!initSAM_M8Q()) {setErr(SAMM8Q_FAIL);}
+  if (!mpu.begin(104, &Wire1)) {setErr(MPU6050_FAIL);} 
+  if (!lsm.begin()) {setErr(LSM9SD1_FAIL);}
   setupLSM();//Setups LSM range of measurement
-  if (!bmp1.begin()) {setErr(BMP280_FAIL);}//Init BMP280 and error if fails  
-  if (!bmp2.begin(3, &Wire1)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_1_FAIL);}//Init BMP280 and error if fails   
-  if (!SD.begin(sdSelect)) {setErr(SD_FAIL);}//Init SD reader and error if fails
-
-  logFileName = checkFile(); //Looks for log files already present
-  logfile = SD.open(logFileName, FILE_WRITE);
-  logfile.println("micros, bmp_alt (m), bmp_pressure (Pa), bmp_temp (C), solenoid state, launch detected, apogee detected, landed, ground detection count"); // write header at top of log file
+  if (!bmp1.begin()) {setErr(BMP280_FAIL);} 
+  if (!bmp2.begin(3, &Wire)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_1_FAIL);} 
+  if (!bmp3.begin(3, &Wire1)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_2_FAIL);}  
+  if (!adxl.begin()) {setErr(ADXL375_FAIL);}
+  //adxl.setRange(ADXL345_RANGE_16_G);
+  
+  logfile = SD.open(checkFile(), FILE_WRITE);//Opens new file with highest index
+  long epochTime = epoch();
+  //Print epoch bytes to logfile 
+  logfile.print((byte)((epochTime >> 24) & 0xFF));
+  logfile.print((byte)((epochTime >> 16) & 0xFF));
+  logfile.print((byte)((epochTime >> 8) & 0xFF));
+  logfile.println((byte)(epochTime & 0xFF));
+  logfile.print("TIME(us), BMP280_PRESS, LAT, LON, MPU_AX, MPU_AY, MPU_AZ, BMP180_1_PRESS"); 
+  logfile.print("BMP180_2_PRESS, AS5600_1_ANG, AS5600_2_ANG, ADXL345_AX, ADXL345_AY");
+  logfile.println("ADXL345_AZ, LSM_AX, LSM_AY, LSM_AZ"); // write header at top of log file
   logfile.close();
 }
 void dynamicStart(){//W.I.P.
@@ -448,11 +513,21 @@ void parseLatLong(char* value, byte size){//Alleon Oxales W.I.P.
 
 //==========RADIO CODE==========Alleon Oxales
 void readRadio(){
-  if (rfSerial.available() > 0) {//Ping Data From Ground Station
-    char incomingByte = rfSerial.read(); //Do not make this static
-    rfSerial.print(incomingByte);
-    if(debug){Serial.print(incomingByte);}
-    commands(incomingByte);
+  if(debug){printErr();}//Outputs error codes to serial
+      char* massage = readyPacket();
+      rfSerial.flush();
+      for(int i = 0; i< charArrayLegnth; i++){
+        rfSerial.print(*(massage+i));//Send telemetry
+      }
+}
+void sendRadio(){
+  if((micros() - RFD_LAST > RFD_RATE)){
+    static char* massage = readyPacket();
+    rfSerial.flush();
+    for(int i = 0; i< charArrayLegnth; i++){
+      rfSerial.print(*(massage+i));//Send telemetry
+    }
+    RFD_LAST = micros();
   }
 }
 char* readyPacket(){//Combines telemetry into bit array then convert to char array
@@ -592,15 +667,34 @@ void event_detection(){
     }  
 }
 bool detect_good_shutdown(){//Alleon Oxales
-  for(int i = 0; i < 3; i++){
+  bool eeprom_check = 1;
+  for(int i = 0; i < 3; i++){//First looks for shutdown flag in EEPROM
     int value = EEPROM.read(i);
     if(value == 0xff){
       EEPROM.write(i, 0);
     }else{
-      return false;
+      eeprom_check = 0;
+      break;
     }
   }
-  return true;
+  
+  if(!eeprom_check){//If eeprom check fails, try SD card check
+    long epochTime = 0;
+    logfile = SD.open(checkFile(1), FILE_READ);
+    for (int i = 3; i >= 0; i--) {
+      if (logfile.available()) {
+        epochTime += logfile.read()*(1<<(i*8));  // Read one character and add to epoch
+      }else{
+        return true;//If for example, there are no log files yet
+      }
+    }
+    logfile.close();
+    if(epoch() - epochTime > 3600){//Check if log file creation was >1hr ago
+      return true;
+    }else{
+      return false;
+    }
+  }else{return true;}
 }//end detect_good_shutdown
 //========================================
 
@@ -634,6 +728,15 @@ void readLSM(){//Alleon Oxales
   lsm.read();
   lsm.getEvent(&LSM_acc, &LSM_gyro, &LSM_mag, &LSM_temp);
   
+  LSM_AX = LSM_acc.acceleration.x;
+  LSM_AY = LSM_acc.acceleration.y;
+  LSM_AZ = LSM_acc.acceleration.z;
+  LSM_GX = LSM_gyro.gyro.x;
+  LSM_GY = LSM_gyro.gyro.y;
+  LSM_GZ = LSM_gyro.gyro.z;
+  LSM_MX = LSM_mag.magnetic.x;
+  LSM_MY = LSM_mag.magnetic.y;
+  LSM_MZ = LSM_mag.magnetic.z;
   if(debug){
     Serial.print("ACC:");
     Serial.print(LSM_acc.acceleration.x, 2);Serial.print(", ");
@@ -652,16 +755,25 @@ void readLSM(){//Alleon Oxales
     Serial.print("||||");
   }
 }
-int readRawAngle() {
-  Wire.beginTransmission(AS5600_ADDR);
-  Wire.write(RAW_ANGLE_REG);  // Set the register to read raw angle
-  Wire.endTransmission();
+void readADXL(){
+  sensors_event_t event; 
+  adxl.getEvent(&event);
+ 
+  /* Display the results (acceleration is measured in m/s^2) */
+  ADXL345_AX = event.acceleration.x;
+  ADXL345_AY = event.acceleration.y;
+  ADXL345_AZ = event.acceleration.z;
+}//end readADXL
+int readRawAngle(TwoWire *wire) {//Ryan Santiago
+  wire->beginTransmission(AS5600_ADDR);
+  wire->write(RAW_ANGLE_REG);  // Set the register to read raw angle
+  wire->endTransmission();
   
   // Request 2 bytes from AS5600
-  Wire.requestFrom(AS5600_ADDR, 2);
-  if (Wire.available() == 2) {
-    int highByte = Wire.read();
-    int lowByte = Wire.read();
+  wire->requestFrom(AS5600_ADDR, 2);
+  if (wire->available() == 2) {
+    int highByte = wire->read();
+    int lowByte = wire->read();
     
     // Combine high and low byte to form a 12-bit result
     int angle = (highByte << 8) | lowByte;
@@ -670,9 +782,9 @@ int readRawAngle() {
     return angle;
   } else {
     // Return -1 if reading fails
-    return 180;
+    return -1;
   }
-}
+}//end readRawAngle
 //==============================
 
 
@@ -727,26 +839,7 @@ void commands(char command){//Alleon Oxales
       break;  
   }
   time_last_command = millis();
-}
-char* checkFile(){//Alleon Oxales
-  int fileExists = 1;
-  int fileNum = 0;
-  static char fileName[8] = "000.txt";
-  while(fileExists){
-    fileName[0] = '0' + fileNum/100;
-    fileName[1] = '0' + (fileNum%100)/10;
-    fileName[2] = '0' + fileNum%10;
-    File checkfile = SD.open(fileName);
-    checkfile.seek(1 * 6);
-    String content = checkfile.readStringUntil('\r');
-    if(content != ""){
-      fileNum++;
-    }else{
-      fileExists = 0;
-    }
-  }
-  return fileName;
-}//end checkFile
+}//end commands
 void printErr(){
   for(int i = 0; i < 32; i++){
     int check = i + errorCodes[i]*32;
@@ -778,12 +871,12 @@ void printErr(){
       case SD_FAIL + 32: Serial.print("SD_FAIL  "); break;
       case RFD900_FAIL + 32: Serial.print("RFD900_FAIL  "); break;
       case RFM9X_FAIL + 32: Serial.print("RFM9X_FAIL  "); break;
-      case ADXL345_FAIL + 32: Serial.print("ADXL345_FAIL  "); break;
+      case ADXL375_FAIL + 32: Serial.print("ADXL375_FAIL  "); break;
       case LSM9SD1_FAIL + 32: Serial.print("LSM9SD1_FAIL  "); break;
     }
   }
   Serial.println();
-}
+}//end printErr
 void printRTC(){
   rtc.refresh();
 
@@ -803,4 +896,20 @@ void printRTC(){
   Serial.print(rtc.minute());
   Serial.print(':');
   Serial.println(rtc.second());
-}
+}//end printRTC
+long epoch(){
+  struct tm timeinfo = {0}; // Initialize all fields to zero
+
+  // Set up date and time components
+  timeinfo.tm_year = rtc.year() - 1900; // Years since 1900
+  timeinfo.tm_mon = rtc.month() - 1;       // Month, where 0 = January
+  timeinfo.tm_mday = rtc.day();           // Day of the month
+  timeinfo.tm_hour = rtc.hour();
+  timeinfo.tm_min = rtc.minute();
+  timeinfo.tm_sec = rtc.second();
+
+  // Convert to time_t (epoch time)
+  time_t epochTime = mktime(&timeinfo);
+
+  return static_cast<long>(epochTime);
+}// end epoch

@@ -146,11 +146,11 @@ const int PRGM_ERR = 0,
 uint BMP280_RATE = 37500,//Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5, Ultra High: 37.5
     SAMM8Q_RATE = 100000,
     MPU6050_RATE = 9,
-    BMP180_RATE = 17,//Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
+    BMP180_RATE = 50000,//Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
     AS5600_RATE = 5000,
     RFD_RATE = 50000,
     LSM_RATE = 40000,
-    ADXL345_RATE = 0;
+    ADXL345_RATE = 40000;
 
 //Component last cycle time micros
 uint BMP280_LAST = 0,
@@ -268,22 +268,25 @@ void loop() {
       BMP280_LAST = micros();
     }
     if(micros() - BMP180_LAST > BMP180_RATE){
-      BMP180_1_PRESS = bmp2.readPressure();
+      //BMP180_1_PRESS = bmp2.readPressure();
       BMP180_2_PRESS = bmp3.readPressure();
-      BMP280_LAST = micros();
+      Serial.println(BMP180_2_PRESS);
+      BMP180_LAST = micros();
     }
+    
     if(micros() - LSM_LAST > LSM_RATE){
       readLSM();
       LSM_LAST = micros();
     }
     if(micros() - ADXL345_LAST > ADXL345_RATE){
-      readADXL();
+      //readADXL();
       ADXL345_LAST = micros();
     }
     if(lowDataTransfer){
       sendRadio();
       if(debug){Serial.print("||||");}
       //printRTC();
+      //Serial.println(epoch());
     }
   }else if(lowPower){//Low Power Mode
     digitalWrite(lowpower_pin, HIGH);
@@ -305,8 +308,8 @@ void normalStart(){
   if (!lsm.begin()) {setErr(LSM9SD1_FAIL);}
   setupLSM();//Setups LSM range of measurement
   if (!bmp1.begin()) {setErr(BMP280_FAIL);} 
-  if (!bmp2.begin(3, &Wire)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_1_FAIL);} 
-  if (!bmp3.begin(3, &Wire1)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_2_FAIL);}  
+  if (!bmp2.begin(1, &Wire)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_1_FAIL);} 
+  if (!bmp3.begin(1, &Wire1)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_2_FAIL);}  
   if (!adxl.begin()) {setErr(ADXL375_FAIL);}
   //adxl.setRange(ADXL345_RANGE_16_G);
   
@@ -528,6 +531,7 @@ void sendRadio(){
       rfSerial.print(*(massage+i));//Send telemetry
     }
     RFD_LAST = micros();
+    //printErr();
   }
 }
 char* readyPacket(){//Combines telemetry into bit array then convert to char array
@@ -898,10 +902,11 @@ void printRTC(){
   Serial.println(rtc.second());
 }//end printRTC
 long epoch(){
+  rtc.refresh();
   struct tm timeinfo = {0}; // Initialize all fields to zero
 
   // Set up date and time components
-  timeinfo.tm_year = rtc.year() - 1900; // Years since 1900
+  timeinfo.tm_year = rtc.year() + 100; // Years since 1900
   timeinfo.tm_mon = rtc.month() - 1;       // Month, where 0 = January
   timeinfo.tm_mday = rtc.day();           // Day of the month
   timeinfo.tm_hour = rtc.hour();

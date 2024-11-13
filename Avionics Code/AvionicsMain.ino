@@ -230,6 +230,17 @@ float pos[3] = {0,0,0},//Absolute position measurements
 void setup() {
   Serial.begin(57600);// Start hardware serial communication (for debugging)
   rfSerial.begin(57600);//Init RFD UART
+  
+  //RFM9x start
+  pinMode(RFM95_RST, OUTPUT);
+  digitalWrite(RFM95_RST, HIGH);
+  delay(10);
+  digitalWrite(RFM95_RST, LOW);
+  delay(10);
+  digitalWrite(RFM95_RST, HIGH);
+  if (!rf95.init()) {setErr(RFM9X_FAIL);}
+  if(!errorCodes[RFM9X_FAIL]){rf95.setFrequency(RF95_FREQ);rf95.setTxPower(RFM9X_PWR, false);}
+
   Serial.println("Initializing");
   Wire.begin();
   Wire1.begin();
@@ -310,7 +321,7 @@ void loop() {
     dynamicStart();
     readRFD();
     sendRFD();
-    //sendRFM();
+    sendRFM();
   }
 }
 
@@ -328,16 +339,6 @@ void normalStart(){
   if (!bmp3.begin(1, &Wire1)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_2_FAIL);}  
   if (!adxl.begin()) {setErr(ADXL375_FAIL);}
   //adxl.setRange(ADXL345_RANGE_16_G);
-
-  //RFM9x start
-  pinMode(RFM95_RST, OUTPUT);
-  digitalWrite(RFM95_RST, HIGH);
-  delay(10);
-  digitalWrite(RFM95_RST, LOW);
-  delay(10);
-  digitalWrite(RFM95_RST, HIGH);
-  if (!rf95.init()) {setErr(RFM9X_FAIL);}
-  if(!errorCodes[RFM9X_FAIL]){rf95.setFrequency(RF95_FREQ);rf95.setTxPower(RFM9X_PWR, false);}
 
   logfile = SD.open(checkFile(), FILE_WRITE);//Opens new file with highest index
   long epochTime = epoch();
@@ -560,8 +561,7 @@ void sendRFD(){
   }
 }
 void sendRFM(){
-  if((micros() - RFM_LAST > RFM_RATE)){
-    Serial.println("Sending");
+  if((micros() - RFM_LAST > RFM_RATE) && !errorCodes[RFM9X_FAIL]){
     char* massage = readyPacket();
     //itoa(packetnum++, radiopacket+13, 10);
     //Serial.print("Sending "); Serial.println(radiopacket);
@@ -727,6 +727,9 @@ bool detect_good_shutdown(){//Alleon Oxales
   }
   
   if(!eeprom_check){//If eeprom check fails, try SD card check
+    if(errorCodes[SD_FAIL]){
+      return false;
+    }
     long epochTime = 0;
     logfile = SD.open(checkFile(1), FILE_READ);
     for (int i = 3; i >= 0; i--) {

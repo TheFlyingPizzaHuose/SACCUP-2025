@@ -20,11 +20,12 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 #include <Adafruit_MPU6050.h> // MPU6050 accelerometer sensor library
 #include <Adafruit_Sensor.h> // Adafruit unified sensor library
 #include <Adafruit_LSM9DS1.h> // Include LSM9DS1 library
-#include <Adafruit_ADXL375.h> // Incluse ADXL375 library
+#include <Adafruit_ADXL375.h> // Include ADXL375 library
+#include <RH_RF95.h> // Include RFM9X library
 #include <cmath>
 #include <iostream>
 #include <EEPROM.h>
-#include <uRTCLib.h>
+#include <uRTCLib.h> //Include Real Time Clock Library
 #include <time.h>
 
 uRTCLib rtc(0x68);//Real time clock I2C address
@@ -40,6 +41,18 @@ char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursd
 //UART Serial Objects
 #define rfSerial Serial1
 #define gpsSerial Serial2
+
+//RFM9x pin assignments
+#define RFM95_CS    10
+#define RFM95_INT  9
+#define RFM95_RST  24
+// Change to 434.0 or other frequency, must match RX's freq!
+#define RF95_FREQ 433.0
+// Singleton instance of the radio driver
+RH_RF95 rf95(RFM95_CS, RFM95_INT);
+const int RFM9X_PWR = 23;
+int16_t packetnum = 0;  // packet counter, we increment per xmission
+
 
 bool debug = 0;
 
@@ -149,6 +162,7 @@ uint BMP280_RATE = 37500,//Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5,
     BMP180_RATE = 17000,//Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
     AS5600_RATE = 5000,
     RFD_RATE = 50000,
+    RFM_RATE = 50000,
     LSM_RATE = 40000,
     ADXL345_RATE = 40000;
 
@@ -159,6 +173,7 @@ uint BMP280_LAST = 0,
     BMP180_LAST = 0,
     AS5600_LAST = 0,
     RFD_LAST = 0,
+    RFM_LAST = 0,
     LSM_LAST = 0,
     ADXL345_LAST = 0;
 
@@ -239,7 +254,7 @@ void loop() {
     if(micros() < last_micros){//Clock rollover check
       BMP280_LAST = 0;SAMM8Q_LAST = 0;MPU6050_LAST = 0;BMP180_LAST = 0;AS5600_LAST = 0;LSM_LAST = 0;}
 
-    readRadio();
+    readRFD();
 
     static char gps_msg[200] = {};
     static int gps_msg_index = 0;
@@ -282,18 +297,20 @@ void loop() {
       ADXL345_LAST = micros();
     }
     if(lowDataTransfer){
-      sendRadio();
+      sendRFD();
+      sendRFM();
       if(debug){Serial.print("||||");}
       //printRTC();
       //Serial.println(epoch());
     }
   }else if(lowPower){//Low Power Mode
     digitalWrite(lowpower_pin, HIGH);
-    readRadio();
+    readRFD();
   }else{//Recovery Mode 
     dynamicStart();
-    readRadio();
-    sendRadio();
+    readRFD();
+    sendRFD();
+    //sendRFM();
   }
 }
 
@@ -311,7 +328,17 @@ void normalStart(){
   if (!bmp3.begin(1, &Wire1)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_2_FAIL);}  
   if (!adxl.begin()) {setErr(ADXL375_FAIL);}
   //adxl.setRange(ADXL345_RANGE_16_G);
-  
+
+  //RFM9x start
+  pinMode(RFM95_RST, OUTPUT);
+  digitalWrite(RFM95_RST, HIGH);
+  delay(10);
+  digitalWrite(RFM95_RST, LOW);
+  delay(10);
+  digitalWrite(RFM95_RST, HIGH);
+  if (!rf95.init()) {setErr(RFM9X_FAIL);}
+  if(!errorCodes[RFM9X_FAIL]){rf95.setFrequency(RF95_FREQ);rf95.setTxPower(RFM9X_PWR, false);}
+
   logfile = SD.open(checkFile(), FILE_WRITE);//Opens new file with highest index
   long epochTime = epoch();
   //Print epoch bytes to logfile
@@ -514,7 +541,7 @@ void parseLatLong(char* value, byte size){//Alleon Oxales W.I.P.
 //============================
 
 //==========RADIO CODE==========Alleon Oxales
-void readRadio(){
+void readRFD(){
   if (rfSerial.available() > 0) {//Ping Data From Ground Station
     char incomingByte = rfSerial.read(); //Do not make this static
     rfSerial.print(incomingByte);
@@ -522,7 +549,7 @@ void readRadio(){
     commands(incomingByte);
   }
 }
-void sendRadio(){
+void sendRFD(){
   if((micros() - RFD_LAST > RFD_RATE)){
     char* massage = readyPacket();
     rfSerial.flush();
@@ -530,8 +557,26 @@ void sendRadio(){
       rfSerial.print(*(massage+i));//Send telemetry
     }
     RFD_LAST = micros();
-    //printErr();
   }
+}
+void sendRFM(){
+  if((micros() - RFM_LAST > RFM_RATE)){
+    Serial.println("Sending");
+    char* massage = readyPacket();
+    //itoa(packetnum++, radiopacket+13, 10);
+    //Serial.print("Sending "); Serial.println(radiopacket);
+    //radiopacket[19] = 0;
+
+    //Serial.println("Sending...");
+    //delay(10);
+    rf95.send(massage, 17);
+
+    //Serial.println("Waiting for packet to complete...");
+    //delay(10);
+    //rf95.waitPacketSent();
+    RFM_LAST = micros();
+  }
+
 }
 char* readyPacket(){//Combines telemetry into bit array then convert to char array
   int bitArray[bitArrayLength] = {};

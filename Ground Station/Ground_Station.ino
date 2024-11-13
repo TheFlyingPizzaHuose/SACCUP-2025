@@ -105,6 +105,7 @@ void loop() {
     uint8_t len = sizeof(buf);
 
     if (rf95.recv(buf, &len)) {
+      Serial.print("||RFD||");
       msg_recieved = true;
       for(int i = 0; i<17; i++){
         int* bins = uint_to_binary(buf[i]);
@@ -125,12 +126,12 @@ void loop() {
       Serial.println("Sent a reply");
       digitalWrite(LED_BUILTIN, LOW);*/
     }
-  }
-  if (false && rfSerial.available()) {
+  }else if (rfSerial.available()) {
     char data = rfSerial.read(); // Read from software serial
     charArray[message_index] = data;
     if(data == 'L' && lastData == 'R'){//Checks if end characters are present
       if(message_index == 16){
+        Serial.print("||RFM||");
         msg_recieved = true;
         for(int i = 0; i<17; i++){
           int* bins = uint_to_binary(charArray[i]);

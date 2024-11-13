@@ -12,6 +12,17 @@ Avionics Datasheet
 https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/edit
 */
 #include <SoftwareSerial.h>
+#include <RH_RF95.h> // Include RFM9X library
+
+//RFM9x pin assignments
+#define RFM95_CS    10
+#define RFM95_INT  9
+#define RFM95_RST  14
+// Change to 434.0 or other frequency, must match RX's freq!
+#define RF95_FREQ 433.0
+// Singleton instance of the radio driver
+RH_RF95 rf95(RFM95_CS, RFM95_INT);
+const int RFM9X_PWR = 23;
 
 #define rfSerial Serial1
 
@@ -69,6 +80,17 @@ void setup() {
     Serial.begin(57600); // Start serial communication at 57600 baud rate
     rfSerial.begin(57600);
     Serial.println("Ground Station Ready!");
+
+  //RFM9x start
+  pinMode(RFM95_RST, OUTPUT);
+  digitalWrite(RFM95_RST, HIGH);
+  delay(10);
+  digitalWrite(RFM95_RST, LOW);
+  delay(10);
+  digitalWrite(RFM95_RST, HIGH);
+  while (!rf95.init()) {Serial.println("RFM9X_FAIL");}
+  rf95.setFrequency(RF95_FREQ);
+  rf95.setTxPower(RFM9X_PWR, false);
 }
 
 char lastData = 0;
@@ -77,13 +99,39 @@ int last_time = millis();
 int msg_recieved = false;
 void loop() {
   static char charArray[17] = {};
-  if (rfSerial.available()) {
+  if (rf95.available()) {
+    // Should be a message for us now
+    uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+    uint8_t len = sizeof(buf);
+
+    if (rf95.recv(buf, &len)) {
+      msg_recieved = true;
+      for(int i = 0; i<17; i++){
+        int* bins = uint_to_binary(buf[i]);
+        for(int x = 0; x<8; x++){
+          bitArray[i*8 + x] = *(bins+x);
+          //Serial.print(bitArray[i*8 + x]);
+        }
+      }
+      //RH_RF95::printBuffer("Received: ", buf, len);
+      //Serial.print("Got: ");
+      //Serial.print("  RSSI: ");
+      //Serial.println(rf95.lastRssi(), DEC);
+
+      /* Send a reply
+      uint8_t data[] = "And hello back to you";
+      rf95.send(data, sizeof(data));
+      rf95.waitPacketSent();
+      Serial.println("Sent a reply");
+      digitalWrite(LED_BUILTIN, LOW);*/
+    }
+  }
+  if (false && rfSerial.available()) {
     char data = rfSerial.read(); // Read from software serial
     charArray[message_index] = data;
-    if(data == 'L'){//Checks if end characters are present
-      if(message_index == 16 && lastData == 'R'){
+    if(data == 'L' && lastData == 'R'){//Checks if end characters are present
+      if(message_index == 16){
         msg_recieved = true;
-        //Serial.println();
         for(int i = 0; i<17; i++){
           int* bins = uint_to_binary(charArray[i]);
           for(int x = 0; x<8; x++){
@@ -91,8 +139,8 @@ void loop() {
             //Serial.print(bitArray[i*8 + x]);
           }
         }
+        message_index = 0;
       }
-      message_index = 0;
     }else{
       message_index++;
     }

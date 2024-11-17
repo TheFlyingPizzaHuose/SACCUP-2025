@@ -11,25 +11,25 @@ is used in this program such as libraries.
 Avionics Datasheet
 https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/edit
 */
-#include <SoftwareSerial.h> // UART Library
-#include <Wire.h> // I2C library
-#include <SPI.h> // SPI library
-#include <SD.h> // SD card library
-#include <Adafruit_BMP085.h> // BMP 085 or 180 pressure sensor library
-#include <Adafruit_BMP280.h> // BMP 280 pressure sensor library
-#include <Adafruit_MPU6050.h> // MPU6050 accelerometer sensor library
-#include <Adafruit_Sensor.h> // Adafruit unified sensor library
-#include <Adafruit_LSM9DS1.h> // Include LSM9DS1 library
-#include <Adafruit_ADXL375.h> // Include ADXL375 library
-#include <RH_RF95.h> // Include RFM9X library
+#include <SoftwareSerial.h>    // UART Library
+#include <Wire.h>              // I2C library
+#include <SPI.h>               // SPI library
+#include <SD.h>                // SD card library
+#include <Adafruit_BMP085.h>   // BMP 085 or 180 pressure sensor library
+#include <Adafruit_BMP280.h>   // BMP 280 pressure sensor library
+#include <Adafruit_MPU6050.h>  // MPU6050 accelerometer sensor library
+#include <Adafruit_Sensor.h>   // Adafruit unified sensor library
+#include <Adafruit_LSM9DS1.h>  // Include LSM9DS1 library
+#include <Adafruit_ADXL375.h>  // Include ADXL375 library
+#include <RH_RF95.h>           // Include RFM9X library
 #include <cmath>
 #include <iostream>
 #include <EEPROM.h>
-#include <uRTCLib.h> //Include Real Time Clock Library
+#include <uRTCLib.h>  //Include Real Time Clock Library
 #include <time.h>
 
-uRTCLib rtc(0x68);//Real time clock I2C address
-char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+uRTCLib rtc(0x68);  //Real time clock I2C address
+char daysOfTheWeek[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
 
 #define AS5600_ADDR 0x36
 #define RAW_ANGLE_REG 0x0C
@@ -43,9 +43,9 @@ char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursd
 #define gpsSerial Serial2
 
 //RFM9x pin assignments
-#define RFM95_CS    10
-#define RFM95_INT  9
-#define RFM95_RST  24
+#define RFM95_CS 10
+#define RFM95_INT 9
+#define RFM95_RST 26
 // Change to 434.0 or other frequency, must match RX's freq!
 #define RF95_FREQ 433.0
 // Singleton instance of the radio driver
@@ -60,137 +60,138 @@ bool debug = 0;
 const int lowpower_pin = 2;
 const int shutdown_pin = 3;
 
-//SD card variables 
+//SD card variables
 const int sdSelect = BUILTIN_SDCARD;
 char* logFileName;
 File logfile;
 
-char* checkFile(bool mode = 0){//Alleon Oxales
+char* checkFile(bool mode = 0) {  //Alleon Oxales
   int fileExists = 1;
   int fileNum = 0;
   static char fileName[8] = "000.txt";
-  while(fileExists){
-    fileName[0] = '0' + fileNum/100;
-    fileName[1] = '0' + (fileNum%100)/10;
-    fileName[2] = '0' + fileNum%10;
+  while (fileExists) {
+    fileName[0] = '0' + fileNum / 100;
+    fileName[1] = '0' + (fileNum % 100) / 10;
+    fileName[2] = '0' + fileNum % 10;
     File checkfile = SD.open(fileName);
     checkfile.seek(1 * 6);
     String content = checkfile.readStringUntil('\r');
-    if(content != ""){
+    if (content != "") {
       fileNum++;
-    }else{
+    } else {
       fileExists = 0;
     }
   }
-  if(mode){
-    if(fileNum>0){fileNum--;}
-    fileName[0] = '0' + fileNum/100;
-    fileName[1] = '0' + (fileNum%100)/10;
-    fileName[2] = '0' + fileNum%10;
+  if (mode) {
+    if (fileNum > 0) { fileNum--; }
+    fileName[0] = '0' + fileNum / 100;
+    fileName[1] = '0' + (fileNum % 100) / 10;
+    fileName[2] = '0' + fileNum % 10;
   }
   return fileName;
-}//end checkFile
+}  //end checkFile
 
 // Create the sensor objects
-Adafruit_MPU6050 mpu; //Accelerometer
-Adafruit_BMP280 bmp1(&Wire); //Pitot Tube Pressure Sensor
+Adafruit_MPU6050 mpu;         //Accelerometer
+Adafruit_BMP280 bmp1(&Wire);  //Pitot Tube Pressure Sensor
 Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(&Wire);
 static sensors_event_t LSM_acc, LSM_gyro, LSM_mag, LSM_temp;
 Adafruit_BMP085 bmp2;
 Adafruit_BMP085 bmp3;
 Adafruit_ADXL375 adxl = Adafruit_ADXL375(12345);
 
-int gpsVersion = 2; //SAM-M8Q
+int gpsVersion = 2;  //SAM-M8Q
 
 // AV Modes
 bool lowPower = 0;
-bool lowDataTransfer = 1; //Default is 1
-int shutdownCheck[3] = {0,0,0}; //All three elements must be >0 to activate shutdown
+bool lowDataTransfer = 1;            //Default is 1
+int shutdownCheck[3] = { 0, 0, 0 };  //All three elements must be >0 to activate shutdown
 int time_last_command = 0;
 
-int bitLengthList[10] = {12,//Seconds since launch
-                        1, //Sender Ident
-                        12, //Altitude
-                        12, //Latitude
-                        12, //Lonitude
-                        9, //Velocity
-                        8, //OrientationX
-                        8, //OrientationY
-                        32, //Error Code Array
-                        6 //Even bit Array
-                        };//Represents the number of bits for each part of the data transmission excluding checksum and endchar
+int bitLengthList[10] = {
+  12,  //Seconds since launch
+  1,   //Sender Ident
+  12,  //Altitude
+  12,  //Latitude
+  12,  //Lonitude
+  9,   //Velocity
+  8,   //OrientationX
+  8,   //OrientationY
+  32,  //Error Code Array
+  6    //Even bit Array
+};     //Represents the number of bits for each part of the data transmission excluding checksum and endchar
 const int bitArrayLength = 112;
-const int charArrayLegnth = bitArrayLength/8 + 3;
+const int charArrayLegnth = bitArrayLength / 8 + 3;
 int my_event_arr[6] = {};
-int errorCodes[32] = {}; //Check document for error code list
+int errorCodes[32] = {};  //Check document for error code list
 
 //Error codes
 const int PRGM_ERR = 0,
-    ALT_OUT_RANGE = 1,
-    LAT_OUT_RANGE = 2,
-    LONG_OUT_RANGE = 3,
-    VEL_OUT_RANGE = 4,
-    ORIENT_X_OUT_RANGE = 5,
-    ORIENT_Y_OUT_RANGE = 6,
-    BMP280_ERR_DAT = 7,
-    SAMM8Q_ERR_DAT = 8,
-    MPU6050_ERR_DAT = 9,
-    BMP180_1_ERR_DAT = 10,
-    BMP180_2_ERR_DAT = 11,
-    AS5600_1_ERR_DAT = 12,
-    AS5600_2_ERR_DAT = 13,
-    TELEM_PWR_FAULT = 14,
-    VIDEO_PWR_FAULT = 15,
-    MAIN_PWR_FAULT = 16,
-    BMP280_FAIL = 17,
-    SAMM8Q_FAIL = 18,
-    MPU6050_FAIL = 19,
-    BMP180_1_FAIL = 20,
-    BMP180_2_FAIL = 21,
-    AS5600_1_FAIL = 22,
-    AS5600_2_FAIL = 23,
-    SD_FAIL = 24,
-    RFD900_FAIL = 25,
-    RFM9X_FAIL = 26,
-    ADXL375_FAIL = 27,
-    LSM9SD1_FAIL = 28;
+          ALT_OUT_RANGE = 1,
+          LAT_OUT_RANGE = 2,
+          LONG_OUT_RANGE = 3,
+          VEL_OUT_RANGE = 4,
+          ORIENT_X_OUT_RANGE = 5,
+          ORIENT_Y_OUT_RANGE = 6,
+          BMP280_ERR_DAT = 7,
+          SAMM8Q_ERR_DAT = 8,
+          MPU6050_ERR_DAT = 9,
+          BMP180_1_ERR_DAT = 10,
+          BMP180_2_ERR_DAT = 11,
+          AS5600_1_ERR_DAT = 12,
+          AS5600_2_ERR_DAT = 13,
+          TELEM_PWR_FAULT = 14,
+          VIDEO_PWR_FAULT = 15,
+          MAIN_PWR_FAULT = 16,
+          BMP280_FAIL = 17,
+          SAMM8Q_FAIL = 18,
+          MPU6050_FAIL = 19,
+          BMP180_1_FAIL = 20,
+          BMP180_2_FAIL = 21,
+          AS5600_1_FAIL = 22,
+          AS5600_2_FAIL = 23,
+          SD_FAIL = 24,
+          RFD900_FAIL = 25,
+          RFM9X_FAIL = 26,
+          ADXL375_FAIL = 27,
+          LSM9SD1_FAIL = 28;
 
 //Component cycle time micros
-uint BMP280_RATE = 37500,//Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5, Ultra High: 37.5
-    SAMM8Q_RATE = 100000,
-    MPU6050_RATE = 9,
-    BMP180_RATE = 17000,//Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
-    AS5600_RATE = 5000,
-    RFD_RATE = 50000,
-    RFM_RATE = 50000,
-    LSM_RATE = 40000,
-    ADXL345_RATE = 40000;
+uint BMP280_RATE = 37500,  //Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5, Ultra High: 37.5
+  SAMM8Q_RATE = 100000,
+     MPU6050_RATE = 9,
+     BMP180_RATE = 17000,  //Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
+  AS5600_RATE = 5000,
+     RFD_RATE = 50000,
+     RFM_RATE = 50000,
+     LSM_RATE = 40000,
+     ADXL345_RATE = 40000;
 
 //Component last cycle time micros
 uint BMP280_LAST = 0,
-    SAMM8Q_LAST = 0,
-    MPU6050_LAST = 0,
-    BMP180_LAST = 0,
-    AS5600_LAST = 0,
-    RFD_LAST = 0,
-    RFM_LAST = 0,
-    LSM_LAST = 0,
-    ADXL345_LAST = 0;
+     SAMM8Q_LAST = 0,
+     MPU6050_LAST = 0,
+     BMP180_LAST = 0,
+     AS5600_LAST = 0,
+     RFD_LAST = 0,
+     RFM_LAST = 0,
+     LSM_LAST = 0,
+     ADXL345_LAST = 0;
 
 //Time variables
 uint time_launch = 0;
 uint last_millis = 0;
 uint last_micros = 0;
-float time_since_launch = 0;//seconds
+float time_since_launch = 0;  //seconds
 
 //Telemetry Variables
-int sender_indent = 1;//0: Avionics 1: Payload drone
-float altitude = 0,//meters
-      latitude = 0,//meters
-      longitude = 0,//meters
-      velocity = 0,//meters per second
-      orientationX = 0,//degrees
-      orientationY = 0;//degrees
+int sender_indent = 1;  //0: Avionics 1: Payload drone
+float altitude = 0,     //meters
+  latitude = 0,         //meters
+  longitude = 0,        //meters
+  velocity = 0,         //meters per second
+  orientationX = 0,     //degrees
+  orientationY = 0;     //degrees
 
 //Sensor Data
 float BMP280_PRESS = 0,
@@ -221,16 +222,16 @@ float BMP280_PRESS = 0,
 
 
 //Kinematics variables
-float pos[3] = {0,0,0},//Absolute position measurements
-      vel[3] = {0,0,0},//Velocity measurements
-      acc[3] = {0,0,0},//Acceleration measurement
-      abs_rot[3] = {0,0,0},//Absolute rotation measurements
-      dt_rot[3] = {0,0,0},//Derivatie rotation measurements
-      d2_rot[3] = {0,0,0};//2nd Derivative rotation measurements
+float pos[3] = { 0, 0, 0 },  //Absolute position measurements
+  vel[3] = { 0, 0, 0 },      //Velocity measurements
+  acc[3] = { 0, 0, 0 },      //Acceleration measurement
+  abs_rot[3] = { 0, 0, 0 },  //Absolute rotation measurements
+  dt_rot[3] = { 0, 0, 0 },   //Derivatie rotation measurements
+  d2_rot[3] = { 0, 0, 0 };   //2nd Derivative rotation measurements
 void setup() {
-  Serial.begin(57600);// Start hardware serial communication (for debugging)
-  rfSerial.begin(57600);//Init RFD UART
-  
+  Serial.begin(57600);    // Start hardware serial communication (for debugging)
+  rfSerial.begin(57600);  //Init RFD UART
+
   //RFM9x start
   pinMode(RFM95_RST, OUTPUT);
   digitalWrite(RFM95_RST, HIGH);
@@ -238,86 +239,104 @@ void setup() {
   digitalWrite(RFM95_RST, LOW);
   delay(10);
   digitalWrite(RFM95_RST, HIGH);
-  if (!rf95.init()) {setErr(RFM9X_FAIL);}
-  if(!errorCodes[RFM9X_FAIL]){rf95.setFrequency(RF95_FREQ);rf95.setTxPower(RFM9X_PWR, false);}
+  if (!rf95.init()) { setErr(RFM9X_FAIL); }
+  if (!errorCodes[RFM9X_FAIL]) {
+    rf95.setFrequency(RF95_FREQ);
+    rf95.setTxPower(RFM9X_PWR, false);
+  }
 
   Serial.println("Initializing");
   Wire.begin();
   Wire1.begin();
+  Wire2.begin();
   pinMode(lowpower_pin, OUTPUT);
   pinMode(shutdown_pin, OUTPUT);
 
   URTCLIB_WIRE.begin();
-  //rtc.set(0, 15, 17, 3, 5, 11, 24);// Set the time rtc.set(second, minute, hour, dayOfWeek, dayOfMonth, month, year) (1=Sunday, 7=Saturday)
+  //rtc.set(0, 22, 12, 5, 14, 11, 24);// Set the time rtc.set(second, minute, hour, dayOfWeek, dayOfMonth, month, year) (1=Sunday, 7=Saturday)
 
-  if (!SD.begin(sdSelect)) {setErr(SD_FAIL);}//Init SD, this comes first to be able to check the latest log file
-  if(detect_good_shutdown()){
+  if (!SD.begin(sdSelect)) { setErr(SD_FAIL); }  //Init SD, this comes first to be able to check the latest log file
+  if (true || detect_good_shutdown()) {
     normalStart();
-  }else{
+  } else {
     setErr(MAIN_PWR_FAULT);
   }
 }
 
 void loop() {
-  if(shutdownCheck[0] == 0xff && shutdownCheck[1] == 0xff && shutdownCheck[2] == 0xff){//Shutdown Mode
+  if (shutdownCheck[0] == 0xff && shutdownCheck[1] == 0xff && shutdownCheck[2] == 0xff) {  //Shutdown Mode
     digitalWrite(shutdown_pin, HIGH);
-  }else if(!errorCodes[MAIN_PWR_FAULT] && !lowPower){//Normal Mode
-    if(micros() < last_micros){//Clock rollover check
-      BMP280_LAST = 0;SAMM8Q_LAST = 0;MPU6050_LAST = 0;BMP180_LAST = 0;AS5600_LAST = 0;LSM_LAST = 0;}
+  } else if (!errorCodes[MAIN_PWR_FAULT] && !lowPower) {  //Normal Mode
+    if (micros() < last_micros) {                         //Clock rollover check
+      BMP280_LAST = 0;
+      SAMM8Q_LAST = 0;
+      MPU6050_LAST = 0;
+      BMP180_LAST = 0;
+      AS5600_LAST = 0;
+      LSM_LAST = 0;
+    }
+    digitalWrite(lowpower_pin, HIGH);
 
     readRFD();
 
     static char gps_msg[200] = {};
     static int gps_msg_index = 0;
-    if (gpsSerial.available() > 0) {//Print gps messages
+    if (gpsSerial.available() > 0) {  //Print gps messages
       char incomingByte = gpsSerial.read();
       //Serial.print(incomingByte);
       gps_msg[gps_msg_index] = incomingByte;
       gps_msg_index++;
-      if(incomingByte == '\n'){
+      if (incomingByte == '\n') {
         readGPS(gps_msg, gps_msg_index);
         gps_msg_index = 0;
       }
     }
 
     //At each sample, this also checks if the sensor has failed.
-    time_since_launch = micros()/1000000 - time_launch;
-    if(micros() - AS5600_LAST > AS5600_RATE){
-      AS5600_1_ANG = readRawAngle(&Wire); 
-      AS5600_2_ANG = readRawAngle(&Wire1); 
-      if(AS5600_1_ANG<0){setErr(AS5600_1_FAIL);} else{clearErr(AS5600_2_FAIL);}
-      if(AS5600_2_ANG<0){setErr(AS5600_2_FAIL);} else{clearErr(AS5600_2_FAIL);}
+    time_since_launch = micros() / 1000000 - time_launch;
+    if (micros() - AS5600_LAST > AS5600_RATE) {
+      AS5600_1_ANG = readRawAngle(&Wire);
+      AS5600_2_ANG = readRawAngle(&Wire1);
+      if (AS5600_1_ANG < 0) {
+        setErr(AS5600_1_FAIL);
+      } else {
+        clearErr(AS5600_2_FAIL);
+      }
+      if (AS5600_2_ANG < 0) {
+        setErr(AS5600_2_FAIL);
+      } else {
+        clearErr(AS5600_2_FAIL);
+      }
       AS5600_LAST = micros();
     }
-    if(micros() - BMP280_LAST > BMP280_RATE){
+    if (micros() - BMP280_LAST > BMP280_RATE) {
       BMP280_PRESS = bmp1.readPressure();
       BMP280_LAST = micros();
     }
-    if(micros() - BMP180_LAST > BMP180_RATE){
+    if (micros() - BMP180_LAST > BMP180_RATE) {
       BMP180_1_PRESS = bmp2.readPressure();
       BMP180_2_PRESS = bmp3.readPressure();
       BMP180_LAST = micros();
     }
-    
-    if(micros() - LSM_LAST > LSM_RATE){
+
+    if (micros() - LSM_LAST > LSM_RATE && !errorCodes[LSM9SD1_FAIL]) {
       readLSM();
       LSM_LAST = micros();
     }
-    if(micros() - ADXL345_LAST > ADXL345_RATE){
+    if (micros() - ADXL345_LAST > ADXL345_RATE && !errorCodes[ADXL375_FAIL]) {
       readADXL();
       ADXL345_LAST = micros();
     }
-    if(lowDataTransfer){
+    if (lowDataTransfer) {
       sendRFD();
       sendRFM();
-      if(debug){Serial.print("||||");}
-      //printRTC();
+      if (debug) { Serial.print("||||"); }
       //Serial.println(epoch());
     }
-  }else if(lowPower){//Low Power Mode
-    digitalWrite(lowpower_pin, HIGH);
+  } else if (lowPower) {  //Low Power Mode
+    digitalWrite(lowpower_pin, LOW);
     readRFD();
-  }else{//Recovery Mode 
+  } else {  //Recovery Mode
     dynamicStart();
     readRFD();
     sendRFD();
@@ -326,94 +345,125 @@ void loop() {
 }
 
 //==========START SEQUENCES==========Alleon Oxales
-void normalStart(){
+void normalStart() {
   Serial.println("NORM_START");
 
   //Initialize sensor ____ and set error if it fails
-  if (!initSAM_M8Q()) {setErr(SAMM8Q_FAIL);}
-  if (!mpu.begin(104, &Wire1)) {setErr(MPU6050_FAIL);} 
-  if (!lsm.begin()) {setErr(LSM9SD1_FAIL);}
-  setupLSM();//Setups LSM range of measurement
-  if (!bmp1.begin()) {setErr(BMP280_FAIL);} 
-  if (!bmp2.begin(1, &Wire)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_1_FAIL);} 
-  if (!bmp3.begin(1, &Wire1)/*0: low power, 1: normal, 2: high res, 3: ultra high*/) {setErr(BMP180_2_FAIL);}  
-  if (!adxl.begin()) {setErr(ADXL375_FAIL);}
+  if (!initSAM_M8Q()) { setErr(SAMM8Q_FAIL); }
+  if (!mpu.begin(104, &Wire1)) { setErr(MPU6050_FAIL); }
+  if (!lsm.begin()) { setErr(LSM9SD1_FAIL); }
+  setupLSM();  //Setups LSM range of measurement
+  if (!bmp1.begin()) { setErr(BMP280_FAIL); }  
+  if (!bmp2.begin(1, &Wire2) /*0: low power, 1: normal, 2: high res, 3: ultra high*/) { setErr(BMP180_1_FAIL); }
+  if (!bmp3.begin(1, &Wire1) /*0: low power, 1: normal, 2: high res, 3: ultra high*/) { setErr(BMP180_2_FAIL); }
+  if (!adxl.begin()) { setErr(ADXL375_FAIL); }
   //adxl.setRange(ADXL345_RANGE_16_G);
 
-  logfile = SD.open(checkFile(), FILE_WRITE);//Opens new file with highest index
+  logfile = SD.open(checkFile(), FILE_WRITE);  //Opens new file with highest index
   long epochTime = epoch();
   //Print epoch bytes to logfile
   logfile.print((char)((epochTime >> 24) & 0xFF));
   logfile.print((char)((epochTime >> 16) & 0xFF));
   logfile.print((char)((epochTime >> 8) & 0xFF));
   logfile.println((char)(epochTime & 0xFF));
-  logfile.print("TIME(us), BMP280_PRESS, LAT, LON, MPU_AX, MPU_AY, MPU_AZ, BMP180_1_PRESS"); 
+  logfile.print("TIME(us), BMP280_PRESS, LAT, LON, MPU_AX, MPU_AY, MPU_AZ, BMP180_1_PRESS");
   logfile.print("BMP180_2_PRESS, AS5600_1_ANG, AS5600_2_ANG, ADXL345_AX, ADXL345_AY");
-  logfile.println("ADXL345_AZ, LSM_AX, LSM_AY, LSM_AZ"); // write header at top of log file
+  logfile.println("ADXL345_AZ, LSM_AX, LSM_AY, LSM_AZ");  // write header at top of log file
   logfile.close();
 }
-void dynamicStart(){//W.I.P.
-
+void dynamicStart() {  //W.I.P.
 }
 
 //==========GPS CODE==========//Based on SparkyVT https://github.com/SparkyVT/HPR-Rocket-Flight-Computer/blob/V4_7_0/Main%20Code/UBLOX_GNSS_Config.ino
-bool initSAM_M8Q(){
+bool initSAM_M8Q() {
   bool gpsReady = 1;
   //Generate the configuration string for Factory Default Settings
-  byte setDefaults[] = {0xB5, 0x62, 0x06, 0x09, 0x0D, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x17, 0x2F, 0xAE};
+  byte setDefaults[] = { 0xB5, 0x62, 0x06, 0x09, 0x0D, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x17, 0x2F, 0xAE };
 
   gpsSerial.begin(38400);
   Serial.print("Set Defaults @ 38400 Baud... ");
-  if(gpsSet(setDefaults, sizeof(setDefaults)) == 3){Serial.println("Restore Defaults Failed!");};
+  if (gpsSet(setDefaults, sizeof(setDefaults)) == 3) { Serial.println("Restore Defaults Failed!"); };
   gpsSerial.begin(9600);
   Serial.print("Set Defaults @ 9600 Baud... ");
-  if(gpsSet(setDefaults, sizeof(setDefaults)) == 3){Serial.println("Restore Defaults Failed!");};
+  if (gpsSet(setDefaults, sizeof(setDefaults)) == 3) { Serial.println("Restore Defaults Failed!"); };
 
   //10Hz Max data rate for SAM-M8Q
-  byte setDataRate[] = {0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0xFA, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x96};
-  setDataRate[6] = 0x64; setDataRate[12] = 0x7A; setDataRate[13] = 0x12;
+  byte setDataRate[] = { 0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0xFA, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x96 };
+  setDataRate[6] = 0x64;
+  setDataRate[12] = 0x7A;
+  setDataRate[13] = 0x12;
 
   //Faster 38400 Baud Rate for the higher update rates
-  byte setBaudRate[] = {0xB5, 0x62, 0x06, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0xD0, 0x08, 0x00, 0x00, 0x00, 0x96, 0x00, 0x00, 0x23, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAF, 0x70};
-  
+  byte setBaudRate[] = { 0xB5, 0x62, 0x06, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0xD0, 0x08, 0x00, 0x00, 0x00, 0x96, 0x00, 0x00, 0x23, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAF, 0x70 };
+
   //Generate the configuration string for Navigation Mode
-  byte setNav[] = {0xB5, 0x62, 0x06, 0x24, 0x24, 0x00, 0xFF, 0xFF, 0x08, 0x03, 0x00, 0x00, 0x00, 0x00, 0x10, 0x27, 0x00, 0x00, 0x05, 0x00, 0xFA, 0x00, 0xFA, 0x00, 0x64, 0x00, 0x2C, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10, 0x27, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4F, 0x1F};
+  byte setNav[] = { 0xB5, 0x62, 0x06, 0x24, 0x24, 0x00, 0xFF, 0xFF, 0x08, 0x03, 0x00, 0x00, 0x00, 0x00, 0x10, 0x27, 0x00, 0x00, 0x05, 0x00, 0xFA, 0x00, 0xFA, 0x00, 0x64, 0x00, 0x2C, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10, 0x27, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4F, 0x1F };
 
   //Generate the configuration string for NMEA messages
-  byte setGLL[] = {0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x2B};
-  byte setGSA[] = {0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x31};
-  byte setGSV[] = {0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x39};
-  byte setVTG[] = {0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x46};
-  byte setGGA[] = {0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x23};
-  byte set4_1[] = {0xB5, 0x62, 0x06, 0x17, 0x14, 0x00, 0x00, 0x41, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0x57};
+  byte setGLL[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x2B };
+  byte setGSA[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x31 };
+  byte setGSV[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x39 };
+  byte setVTG[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x46 };
+  byte setGGA[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x23 };
+  byte set4_1[] = { 0xB5, 0x62, 0x06, 0x17, 0x14, 0x00, 0x00, 0x41, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0x57 };
 
   //Generate the configuration string for interference resistance settings
-  byte setJam[] = {0xB5, 0x62, 0x06, 0x39, 0x08, 0x00, 0xF3, 0xAC, 0x62, 0xAD, 0x1E, 0x43, 0x00, 0x00, 0x56, 0x45};
-  
+  byte setJam[] = { 0xB5, 0x62, 0x06, 0x39, 0x08, 0x00, 0xF3, 0xAC, 0x62, 0xAD, 0x1E, 0x43, 0x00, 0x00, 0x56, 0x45 };
+
   //For M8 series gps, just add Galileo, from https://portal.u-blox.com/s/question/0D52p00008HKEEYCA5/ublox-gps-galileo-enabling-for-ubx-m8
-  byte setSat[] = {0xB5, 0x62, 0x06, 0x3E, 0x0C, 0x00, 0x00, 0x00, 0x20, 0x01, 0x02, 0x04, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x82, 0x56};
+  byte setSat[] = { 0xB5, 0x62, 0x06, 0x3E, 0x0C, 0x00, 0x00, 0x00, 0x20, 0x01, 0x02, 0x04, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x82, 0x56 };
 
   Serial.print("Deactivating GSA Messages... ");
-  if(gpsSet(setGSA, sizeof(setGSA)) == 3){gpsReady = 0; Serial.println("NMEA GSA Message Deactivation Failed!");}
+  if (gpsSet(setGSA, sizeof(setGSA)) == 3) {
+    gpsReady = 0;
+    Serial.println("NMEA GSA Message Deactivation Failed!");
+  }
   Serial.print("Setting Nav Mode... ");
-  if(gpsSet(setNav, sizeof(setNav)) == 3){gpsReady = 0; Serial.println("Nav mode Failed!");}
+  if (gpsSet(setNav, sizeof(setNav)) == 3) {
+    gpsReady = 0;
+    Serial.println("Nav mode Failed!");
+  }
   Serial.print("Deactivating GSV Messages... ");
-  if(gpsSet(setGSV, sizeof(setGSV)) == 3){gpsReady = 0; Serial.println("NMEA GSV Message Deactivation Failed!");}
+  if (gpsSet(setGSV, sizeof(setGSV)) == 3) {
+    gpsReady = 0;
+    Serial.println("NMEA GSV Message Deactivation Failed!");
+  }
   Serial.print("Set 10Hz data rate... ");
-  if(gpsSet(setDataRate, sizeof(setDataRate)) == 3){gpsReady = 0; Serial.println("Set 10Hz data rate Failed!");}
+  if (gpsSet(setDataRate, sizeof(setDataRate)) == 3) {
+    gpsReady = 0;
+    Serial.println("Set 10Hz data rate Failed!");
+  }
   Serial.print("Activating NMEA 4.1 Messages... ");
-  if(gpsSet(set4_1, sizeof(set4_1)) == 3){gpsReady = 0; Serial.println("NMEA 4,1 Activation Failed!");}
+  if (gpsSet(set4_1, sizeof(set4_1)) == 3) {
+    gpsReady = 0;
+    Serial.println("NMEA 4,1 Activation Failed!");
+  }
   Serial.print("Set Satellites... ");
-  if(gpsSet(setSat, sizeof(setSat)) == 3){gpsReady = 0; Serial.println("Satellite Setting Failed!");}
+  if (gpsSet(setSat, sizeof(setSat)) == 3) {
+    gpsReady = 0;
+    Serial.println("Satellite Setting Failed!");
+  }
   Serial.print("Deactivating VTG Messages... ");
-  if(gpsSet(setVTG, sizeof(setVTG)) == 3){gpsReady = 0; Serial.println("NMEA VTG Message Deactivation Failed!");}
+  if (gpsSet(setVTG, sizeof(setVTG)) == 3) {
+    gpsReady = 0;
+    Serial.println("NMEA VTG Message Deactivation Failed!");
+  }
   Serial.print("Setting Interference Threshols... ");
-  if(gpsSet(setJam, sizeof(setJam)) == 3){gpsReady = 0; Serial.println("Interference Settings Failed!");}
+  if (gpsSet(setJam, sizeof(setJam)) == 3) {
+    gpsReady = 0;
+    Serial.println("Interference Settings Failed!");
+  }
   Serial.print("Deactivating GLL Messages... ");
-  if(gpsSet(setGLL, sizeof(setGLL)) == 3){gpsReady = 0; Serial.println("NMEA GLL Message Deactivation Failed!");}
+  if (gpsSet(setGLL, sizeof(setGLL)) == 3) {
+    gpsReady = 0;
+    Serial.println("NMEA GLL Message Deactivation Failed!");
+  }
   Serial.print("Deactivating GGA Messages... ");
-  if(gpsSet(setGGA, sizeof(setGGA)) == 3){gpsReady = 0; Serial.println("NMEA GGA Message Deactivation Failed!");}
-  
+  if (gpsSet(setGGA, sizeof(setGGA)) == 3) {
+    gpsReady = 0;
+    Serial.println("NMEA GGA Message Deactivation Failed!");
+  }
+
   //Increase Baud-Rate on M8Q for faster GPS updates
   //int setSucess = 0;
   Serial.print("Setting Ublox Baud Rate 38400... ");
@@ -424,144 +474,158 @@ bool initSAM_M8Q(){
   gpsSerial.flush();
   gpsSerial.begin(38400);
   return gpsReady;
-}//end ConfigGPS
-int gpsSet(byte* msg, byte size){
+}  //end ConfigGPS
+int gpsSet(byte* msg, byte size) {
   int gpsSetSuccess = 0;
-  while(gpsSetSuccess < 3) {
-      sendUBX(msg, size);
-      gpsSetSuccess += getUBX_ACK(&msg[2]);}
+  while (gpsSetSuccess < 3) {
+    sendUBX(msg, size);
+    gpsSetSuccess += getUBX_ACK(&msg[2]);
+  }
   return gpsSetSuccess;
-}//end gpsSet
-void gpsChecksum(byte *checksumPayload, byte payloadSize) {
+}  //end gpsSet
+void gpsChecksum(byte* checksumPayload, byte payloadSize) {
   byte CK_A = 0, CK_B = 0;
-  for (int i = 0; i < payloadSize ;i++) {
+  for (int i = 0; i < payloadSize; i++) {
     CK_A = CK_A + *checksumPayload;
     CK_B = CK_B + CK_A;
-    checksumPayload++;}
-    
+    checksumPayload++;
+  }
+
   *checksumPayload = CK_A;
   checksumPayload++;
   *checksumPayload = CK_B;
-}//end gpsChecksum
-void sendUBX(byte *UBXmsg, byte msgLength) {
-  for(int i = 0; i < msgLength; i++) {
+}  //end gpsChecksum
+void sendUBX(byte* UBXmsg, byte msgLength) {
+  for (int i = 0; i < msgLength; i++) {
     gpsSerial.write(UBXmsg[i]);
     gpsSerial.flush();
   }
   gpsSerial.println();
   gpsSerial.flush();
-}//end sendUBX
-byte getUBX_ACK(byte *msgID) {
+}  //end sendUBX
+byte getUBX_ACK(byte* msgID) {
   byte CK_A = 0, CK_B = 0;
   byte incoming_char;
   unsigned long ackWait = millis();
-  byte ackPacket[10] = {0xB5, 0x62, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  byte ackPacket[10] = { 0xB5, 0x62, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
   int i = 0;
   while (1) {
     if (gpsSerial.available()) {
       incoming_char = gpsSerial.read();
       if (incoming_char == ackPacket[i]) {
-        i++;}
-      else if (i > 2) {
+        i++;
+      } else if (i > 2) {
         ackPacket[i] = incoming_char;
-        i++;}}
+        i++;
+      }
+    }
     if (i > 9) break;
     if ((millis() - ackWait) > 500) {
       Serial.println("ACK Timeout");
-      return 5;} 
+      return 5;
+    }
     if (i == 4 && ackPacket[3] == 0x00) {
       Serial.println("NAK Received");
-      return 1;}}
+      return 1;
+    }
+  }
 
-  for (i = 2; i < 8 ;i++) {
-  CK_A = CK_A + ackPacket[i];
-  CK_B = CK_B + CK_A;}
-  
+  for (i = 2; i < 8; i++) {
+    CK_A = CK_A + ackPacket[i];
+    CK_B = CK_B + CK_A;
+  }
+
   if (msgID[0] == ackPacket[6] && msgID[1] == ackPacket[7] && CK_A == ackPacket[8] && CK_B == ackPacket[9]) {
     Serial.println("Success!");
     Serial.print("ACK Received! ");
     //printHex(ackPacket, sizeof(ackPacket));
-    return 10;}
-  else {
+    return 10;
+  } else {
     Serial.print("ACK Checksum Failure: ");
     //printHex(ackPacket, sizeof(ackPacket));
     //delay(1000); Removed to reduce startup time
-    return 1;}
-}//end getACK
-void readGPS(char* msg, byte size){//Alleon Oxales
+    return 1;
+  }
+}  //end getACK
+void readGPS(char* msg, byte size) {  //Alleon Oxales
   uint msg_index = 0;
   uint item_index = 0;
   uint item_length = 0;
   static char item[20] = {};
-  if(*msg == '$' && *(msg+1) == 'G' && *(msg+2) == 'N'){//Looks for start of message with "$GN"
+  if (*msg == '$' && *(msg + 1) == 'G' && *(msg + 2) == 'N') {  //Looks for start of message with "$GN"
     msg_index += 3;
-    if(*(msg+3) == 'R' && *(msg+4) == 'M' && *(msg+5) == 'C'){//Checks message type
-      msg_index += 4;//Skips the first comma
-      while(msg_index < size){
-        if(*(msg+msg_index) == ','){
-          switch(item_index){
-            case 0: break;//UNIVERSAL TIME
-            case 1: break;//NAVIGATIONAL STATUS
-            case 2: parseLatLong(item, item_length);break;//LATITUDE
-            case 4: parseLatLong(item, item_length);break;//LONGNITUDE
-            case 6: break;//GROUND SPEED
-            case 7: break;//COURSE
-            case 8: break;//DATE
+    if (*(msg + 3) == 'R' && *(msg + 4) == 'M' && *(msg + 5) == 'C') {  //Checks message type
+      msg_index += 4;                                                   //Skips the first comma
+      while (msg_index < size) {
+        if (*(msg + msg_index) == ',') {
+          switch (item_index) {
+            case 0: break;                                   //UNIVERSAL TIME
+            case 1: break;                                   //NAVIGATIONAL STATUS
+            case 2: parseLatLong(item, item_length); break;  //LATITUDE
+            case 4: parseLatLong(item, item_length); break;  //LONGNITUDE
+            case 6: break;                                   //GROUND SPEED
+            case 7: break;                                   //COURSE
+            case 8: break;                                   //DATE
           }
-          if(debug){
-            for(uint i = 0; i < item_length; i++){
+          if (debug) {
+            for (uint i = 0; i < item_length; i++) {
               Serial.print(item[i]);
             }
             Serial.print('-');
           }
           item_index++;
           item_length = 0;
-        }else{
-          item[item_length] = *(msg+msg_index);
+        } else {
+          item[item_length] = *(msg + msg_index);
           item_length++;
         }
         msg_index++;
       }
     }
   }
-  if(debug){Serial.print("||||");}
-}//end readGPS
-void parseLatLong(char* value, byte size){//Alleon Oxales W.I.P.
-  static uint hunds, tens, ones;//Converting string to integer
-  if(size == 10){//Latitude
-    tens = *value - '0'; ones = *(value+1) - '0';//Converting string to integer
-    latitude = static_cast<float>(tens*10 + ones);//Converting integer to float
+  if (debug) { Serial.print("||||"); }
+}  //end readGPS
+void parseLatLong(char* value, byte size) {  //Alleon Oxales W.I.P.
+  static uint hunds, tens, ones;             //Converting string to integer
+  if (size == 10) {                          //Latitude
+    tens = *value - '0';
+    ones = *(value + 1) - '0';                        //Converting string to integer
+    latitude = static_cast<float>(tens * 10 + ones);  //Converting integer to float
     Serial.println(latitude);
   }
-  if(size == 11){//Longitude
-    hunds = *value - '0'; tens = *(value+1) - '0'; ones = *(value+2) - '0';//Converting string to integer
-    longitude = static_cast<float>((hunds*100) + (tens*10) + ones);//Converting integer to float
+  if (size == 11) {  //Longitude
+    hunds = *value - '0';
+    tens = *(value + 1) - '0';
+    ones = *(value + 2) - '0';                                           //Converting string to integer
+    longitude = static_cast<float>((hunds * 100) + (tens * 10) + ones);  //Converting integer to float
     Serial.println(longitude);
   }
 }
 //============================
 
 //==========RADIO CODE==========Alleon Oxales
-void readRFD(){
-  if (rfSerial.available() > 0) {//Ping Data From Ground Station
-    char incomingByte = rfSerial.read(); //Do not make this static
+void readRFD() {
+  if (rfSerial.available() > 0) {         //Ping Data From Ground Station
+    char incomingByte = rfSerial.read();  //Do not make this static
     rfSerial.print(incomingByte);
-    if(debug){Serial.print(incomingByte);}
+    if (debug) { Serial.print(incomingByte); }
     commands(incomingByte);
   }
 }
-void sendRFD(){
-  if((micros() - RFD_LAST > RFD_RATE)){
+void sendRFD() {
+  if ((micros() - RFD_LAST > RFD_RATE)) {
     char* massage = readyPacket();
     rfSerial.flush();
-    for(int i = 0; i< charArrayLegnth; i++){
-      rfSerial.print(*(massage+i));//Send telemetry
+    for (int i = 0; i < charArrayLegnth; i++) {
+      rfSerial.print(*(massage + i));  //Send telemetry
     }
     RFD_LAST = micros();
+    //printRTC();
+    printErr();
   }
 }
-void sendRFM(){
-  if((micros() - RFM_LAST > RFM_RATE) && !errorCodes[RFM9X_FAIL]){
+void sendRFM() {
+  if ((micros() - RFM_LAST > RFM_RATE) && !errorCodes[RFM9X_FAIL]) {
     char* massage = readyPacket();
     //itoa(packetnum++, radiopacket+13, 10);
     //Serial.print("Sending "); Serial.println(radiopacket);
@@ -576,99 +640,98 @@ void sendRFM(){
     //rf95.waitPacketSent();
     RFM_LAST = micros();
   }
-
 }
-char* readyPacket(){//Combines telemetry into bit array then convert to char array
+char* readyPacket() {  //Combines telemetry into bit array then convert to char array
   int bitArray[bitArrayLength] = {};
-  static char charArray[charArrayLegnth]  {}; //+1 to include checksum byte, static so that the mem alloc is retained throughout the program
+  static char charArray[charArrayLegnth]{};  //+1 to include checksum byte, static so that the mem alloc is retained throughout the program
   int bitIndex = 0;
-  for(int i = 0; i < 10; i++){
+  for (int i = 0; i < 10; i++) {
     int dataLength = bitLengthList[i];
-    if(i == 1){//Deal with ident
+    if (i == 1) {  //Deal with ident
       bitArray[bitIndex] = sender_indent;
       bitIndex++;
-    }else if((i == 0) || (i > 1 && i < 8)){//Deal with floats
+    } else if ((i == 0) || (i > 1 && i < 8)) {  //Deal with floats
       float datum = 0;
-      switch(i){
-        case 0:datum = time_since_launch;break;
-        case 2:datum = altitude;break;
-        case 3:datum = latitude;break;
-        case 4:datum = longitude;break;
-        case 5:datum = velocity;break;
-        case 6:datum = orientationX;break;
-        case 7:datum = orientationY;break;
+      switch (i) {
+        case 0: datum = time_since_launch; break;
+        case 2: datum = altitude; break;
+        case 3: datum = latitude; break;
+        case 4: datum = longitude; break;
+        case 5: datum = velocity; break;
+        case 6: datum = orientationX; break;
+        case 7: datum = orientationY; break;
       }
       int* bitsPtr = dec_to_binary(datum, dataLength);
-      for(int x = 0; x < dataLength; x++){
+      for (int x = 0; x < dataLength; x++) {
         //Serial.print(*(bitsPtr+dataLength-1-x));
-        bitArray[bitIndex] = *(bitsPtr+dataLength-1-x);
+        bitArray[bitIndex] = *(bitsPtr + dataLength - 1 - x);
         bitIndex++;
       }
-    }else if(i == 8){//Deal with error codes
-      for(int x = 0; x < dataLength; x++){
+    } else if (i == 8) {  //Deal with error codes
+      for (int x = 0; x < dataLength; x++) {
         bitArray[bitIndex] = errorCodes[x];
         bitIndex++;
       }
-    }else if(i == 9){//Deal with  bits
-      for(int x = 0; x < dataLength; x++){
+    } else if (i == 9) {  //Deal with  bits
+      for (int x = 0; x < dataLength; x++) {
         bitArray[bitIndex] = my_event_arr[x];
         bitIndex++;
       }
     }
-    charArray[charArrayLegnth-3] = radioChecksum(bitArray, bitArrayLength);
-    charArray[charArrayLegnth-2] = 'R';
-    charArray[charArrayLegnth-1] = 'L';
+    charArray[charArrayLegnth - 3] = radioChecksum(bitArray, bitArrayLength);
+    charArray[charArrayLegnth - 2] = 'R';
+    charArray[charArrayLegnth - 1] = 'L';
   }
   int charIndex = 0;
-  for(int i = 0; i < bitArrayLength; i+=8){
+  for (int i = 0; i < bitArrayLength; i += 8) {
     char result = 0;
-    result |= (bitArray[i] << 7); // Set bit 7
-    result |= (bitArray[i+1] << 6); // Set bit 6
-    result |= (bitArray[i+2] << 5); // Set bit 5
-    result |= (bitArray[i+3] << 4); // Set bit 4
-    result |= (bitArray[i+4] << 3); // Set bit 3
-    result |= (bitArray[i+5] << 2); // Set bit 2
-    result |= (bitArray[i+6] << 1); // Set bit 1
-    result |= (bitArray[i+7] << 0); // Set bit 0
+    result |= (bitArray[i] << 7);      // Set bit 7
+    result |= (bitArray[i + 1] << 6);  // Set bit 6
+    result |= (bitArray[i + 2] << 5);  // Set bit 5
+    result |= (bitArray[i + 3] << 4);  // Set bit 4
+    result |= (bitArray[i + 4] << 3);  // Set bit 3
+    result |= (bitArray[i + 5] << 2);  // Set bit 2
+    result |= (bitArray[i + 6] << 1);  // Set bit 1
+    result |= (bitArray[i + 7] << 0);  // Set bit 0
     charArray[charIndex] = result;
     charIndex++;
   }
   return charArray;
-}//end readyPacket
-byte radioChecksum(int *radioMSG, byte msgLength){
+}  //end readyPacket
+byte radioChecksum(int* radioMSG, byte msgLength) {
   return '_';
-}//end radioChecksum
-int* dec_to_binary(float my_dec, int my_bit){//Ellie McGshee, Returns elements in reverse order
+}  //end radioChecksum
+int* dec_to_binary(float my_dec, int my_bit) {  //Ellie McGshee, Returns elements in reverse order
   int my_dec_int = static_cast<int>(round(my_dec));
   int my_rem;
   static int my_arr[32];
-  if (my_bit>32){
+  if (my_bit > 32) {
     Serial.println("Array requested too large");
     setErr(PRGM_ERR);
   }
-  for (int i = my_bit-1; i >= 0; i--){
+  for (int i = my_bit - 1; i >= 0; i--) {
     int my_exp = pow(2.0, i);
-    my_rem = my_dec_int%my_exp;
-    if (my_dec_int >= my_exp){
+    my_rem = my_dec_int % my_exp;
+    if (my_dec_int >= my_exp) {
       my_arr[i] = 1;
-    }else if (my_dec_int < my_exp){
+    } else if (my_dec_int < my_exp) {
       my_arr[i] = 0;
     }
     my_dec_int = my_rem;
   }
   return my_arr;
-}//end dec_to_binary
+}  //end dec_to_binary
 //Binary to decimal (Elizabeth McGhee)
-float binary_to_dec(int my_bit_size, int* my_arr){
-    float my_sum = 0;
-    int my_index = 0;
-    for (int i = my_bit_size-1; i >= 0; i--){
-        my_sum = pow(2, my_index) * *(my_arr+i)+ my_sum;
-        my_index++;
-    }
-    return my_sum;
-}//end binary to decimal
-int* uint_to_binary(char character){
+float binary_to_dec(int my_bit_size, int* my_arr) {
+  float my_sum = 0;
+  int my_index = 0;
+  for (int i = my_bit_size - 1; i >= 0; i--) {
+    my_sum = pow(2, my_index) * *(my_arr + i) + my_sum;
+    my_index++;
+  }
+  return my_sum;
+}  //end binary to decimal
+int* uint_to_binary(char character) {
   static int result[8];
   result[0] = (character & (1 << 7)) > 0;
   result[1] = (character & (1 << 6)) > 0;
@@ -679,90 +742,92 @@ int* uint_to_binary(char character){
   result[6] = (character & (1 << 1)) > 0;
   result[7] = (character & (1 << 0)) > 0;
   return result;
-}//end uint_to_binary
+}  //end uint_to_binary
 //==============================
 
 // Event Detection ============================================ Elizabeth McGhee WIP
-void event_detection(){
-    float dummy_variable = 0.3; //We don't know this yet
-    float g = 9.81; 
-    // The index is in the following ascending order: liftoff, burnout, apogee, drogue deploy, main deplot, landed
-    // Liftoff =================================================
-    if (altitude > 50.0 and acc[2] > 2*g){
-        my_event_arr[0] = 1;
-        }else{
-        my_event_arr[0] = 0;
-    }
-    // Burnout =================================================
-    if (altitude > dummy_variable and acc[2] < g){
-        my_event_arr[1] = 1;
-    } else {
-        my_event_arr[1] = 0;
-    }
-    // Apogee ==================================================
-    if (vel[2] < 0){
-        my_event_arr[2] = 1;
-    } else {
-        my_event_arr[2] = 0;
-    }
-    // Drogue Deploy ===========================================
-    // Main Deploy =============================================
-    // Landed ==================================================
-    if (altitude < 50.0){
-        my_event_arr[3] = 1;
-    }else {
-        my_event_arr[3] = 0;
-    }  
+void event_detection() {
+  float dummy_variable = 0.3;  //We don't know this yet
+  float g = 9.81;
+  // The index is in the following ascending order: liftoff, burnout, apogee, drogue deploy, main deplot, landed
+  // Liftoff =================================================
+  if (altitude > 50.0 and acc[2] > 2 * g) {
+    my_event_arr[0] = 1;
+  } else {
+    my_event_arr[0] = 0;
+  }
+  // Burnout =================================================
+  if (altitude > dummy_variable and acc[2] < g) {
+    my_event_arr[1] = 1;
+  } else {
+    my_event_arr[1] = 0;
+  }
+  // Apogee ==================================================
+  if (vel[2] < 0) {
+    my_event_arr[2] = 1;
+  } else {
+    my_event_arr[2] = 0;
+  }
+  // Drogue Deploy ===========================================
+  // Main Deploy =============================================
+  // Landed ==================================================
+  if (altitude < 50.0) {
+    my_event_arr[3] = 1;
+  } else {
+    my_event_arr[3] = 0;
+  }
 }
-bool detect_good_shutdown(){//Alleon Oxales
+bool detect_good_shutdown() {  //Alleon Oxales
   bool eeprom_check = 1;
-  for(int i = 0; i < 3; i++){//First looks for shutdown flag in EEPROM
+  for (int i = 0; i < 3; i++) {  //First looks for shutdown flag in EEPROM
     int value = EEPROM.read(i);
-    if(value == 0xff){
+    if (value == 0xff) {
       EEPROM.write(i, 0);
-    }else{
+    } else {
       eeprom_check = 0;
       break;
     }
   }
-  
-  if(!eeprom_check){//If eeprom check fails, try SD card check
-    if(errorCodes[SD_FAIL]){
+
+  if (!eeprom_check) {  //If eeprom check fails, try SD card check
+    if (errorCodes[SD_FAIL]) {
       return false;
     }
     long epochTime = 0;
     logfile = SD.open(checkFile(1), FILE_READ);
     for (int i = 3; i >= 0; i--) {
       if (logfile.available()) {
-        epochTime += logfile.read()*(1<<(i*8));  // Read one character and add to epoch
-      }else{
-        return true;//If for example, there are no log files yet
+        epochTime += logfile.read() * (1 << (i * 8));  // Read one character and add to epoch
+      } else {
+        return true;  //If for example, there are no log files yet
       }
     }
     logfile.close();
-    if(epoch() - epochTime > 3600){//Check if log file creation was >1hr ago
+    if (epoch() - epochTime > 3600) {  //Check if log file creation was >1hr ago
       return true;
-    }else{
+    } else {
       return false;
     }
-  }else{return true;}
-}//end detect_good_shutdown
+  } else {
+    return true;
+  }
+}  //end detect_good_shutdown
 //========================================
 
 //=========SENSOR CODE==========
-void TCA9548A(uint8_t bus) {// Select I2C Bus On I2C Multiplexer (if used)
+void TCA9548A(uint8_t bus) {     // Select I2C Bus On I2C Multiplexer (if used)
   Wire.beginTransmission(0x70);  // TCA9548A address
-  Wire.write(1 << bus);            // send byte to select bus
+  Wire.write(1 << bus);          // send byte to select bus
   Wire.endTransmission();
   Serial.print(bus);
-}//end TCA9548A
-void setupLSM(){//Ryan Santiago
+}  //end TCA9548A
+void setupLSM() {  //Ryan Santiago
   // 1.) Set the accelerometer range
   lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_2G, lsm.LSM9DS1_ACCELDATARATE_10HZ);
   //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_4G, lsm.LSM9DS1_ACCELDATARATE_119HZ);
   //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_8G, lsm.LSM9DS1_ACCELDATARATE_476HZ);
   //lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_16G, lsm.LSM9DS1_ACCELDATARATE_952HZ);
-  
+
   // 2.) Set the magnetometer sensitivity
   lsm.setupMag(lsm.LSM9DS1_MAGGAIN_4GAUSS);
   //lsm.setupMag(lsm.LSM9DS1_MAGGAIN_8GAUSS);
@@ -773,12 +838,12 @@ void setupLSM(){//Ryan Santiago
   lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_245DPS);
   //lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_500DPS);
   //lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_2000DPS);
-}//end setupLSM
-void readLSM(){//Alleon Oxales
+}  //end setupLSM
+void readLSM() {  //Alleon Oxales
   //Read sensor data
   lsm.read();
   lsm.getEvent(&LSM_acc, &LSM_gyro, &LSM_mag, &LSM_temp);
-  
+
   LSM_AX = LSM_acc.acceleration.x;
   LSM_AY = LSM_acc.acceleration.y;
   LSM_AZ = LSM_acc.acceleration.z;
@@ -788,81 +853,92 @@ void readLSM(){//Alleon Oxales
   LSM_MX = LSM_mag.magnetic.x;
   LSM_MY = LSM_mag.magnetic.y;
   LSM_MZ = LSM_mag.magnetic.z;
-  if(debug){
+  if (debug) {
     Serial.print("ACC:");
-    Serial.print(LSM_acc.acceleration.x, 2);Serial.print(", ");
-    Serial.print(LSM_acc.acceleration.y, 2);Serial.print(", ");
-    Serial.print(LSM_acc.acceleration.z, 2);Serial.print("   ");
-    
+    Serial.print(LSM_acc.acceleration.x, 2);
+    Serial.print(", ");
+    Serial.print(LSM_acc.acceleration.y, 2);
+    Serial.print(", ");
+    Serial.print(LSM_acc.acceleration.z, 2);
+    Serial.print("   ");
+
     Serial.print("ROT:");
-    Serial.print(LSM_gyro.gyro.x, 2);Serial.print(", ");
-    Serial.print(LSM_gyro.gyro.y, 2);Serial.print(", ");
-    Serial.print(LSM_gyro.gyro.z, 2);Serial.print("   ");
+    Serial.print(LSM_gyro.gyro.x, 2);
+    Serial.print(", ");
+    Serial.print(LSM_gyro.gyro.y, 2);
+    Serial.print(", ");
+    Serial.print(LSM_gyro.gyro.z, 2);
+    Serial.print("   ");
 
     Serial.print("MAG:");
-    Serial.print(LSM_mag.magnetic.x, 2);Serial.print(", ");
-    Serial.print(LSM_mag.magnetic.y, 2);Serial.print(", ");
-    Serial.print(LSM_mag.magnetic.z, 2);Serial.print("   ");
+    Serial.print(LSM_mag.magnetic.x, 2);
+    Serial.print(", ");
+    Serial.print(LSM_mag.magnetic.y, 2);
+    Serial.print(", ");
+    Serial.print(LSM_mag.magnetic.z, 2);
+    Serial.print("   ");
     Serial.print("||||");
   }
 }
-void readADXL(){
-  sensors_event_t event; 
+void readADXL() {
+  sensors_event_t event;
   adxl.getEvent(&event);
- 
+
   /* Display the results (acceleration is measured in m/s^2) */
   ADXL345_AX = event.acceleration.x;
   ADXL345_AY = event.acceleration.y;
   ADXL345_AZ = event.acceleration.z;
-}//end readADXL
-int readRawAngle(TwoWire *wire) {//Ryan Santiago
+}  //end readADXL
+int readRawAngle(TwoWire* wire) {  //Ryan Santiago
   wire->beginTransmission(AS5600_ADDR);
   wire->write(RAW_ANGLE_REG);  // Set the register to read raw angle
   wire->endTransmission();
-  
+
   // Request 2 bytes from AS5600
   wire->requestFrom(AS5600_ADDR, 2);
   if (wire->available() == 2) {
     int highByte = wire->read();
     int lowByte = wire->read();
-    
+
     // Combine high and low byte to form a 12-bit result
     int angle = (highByte << 8) | lowByte;
-    
+
     // Return the angle
     return angle;
   } else {
     // Return -1 if reading fails
     return -1;
   }
-}//end readRawAngle
+}  //end readRawAngle
 //==============================
 
 
 
-void setErr(int errorCode){
+void setErr(int errorCode) {
   errorCodes[errorCode] = 1;
-}//end setErr
-void clearErr(int errorCode){
+}  //end setErr
+void clearErr(int errorCode) {
   errorCodes[errorCode] = 0;
-}//end clearErr
-void commands(char command){//Alleon Oxales
-  if(shutdownCheck[2] == 0 && millis() - time_last_command > 1000){
-    shutdownCheck[0] = 0;shutdownCheck[1] = 0;shutdownCheck[2] = 0;//Reset shutdown checks after 1s timeout
+}  //end clearErr
+void commands(char command) {  //Alleon Oxales
+  if (shutdownCheck[2] == 0 && millis() - time_last_command > 1000) {
+    shutdownCheck[0] = 0;
+    shutdownCheck[1] = 0;
+    shutdownCheck[2] = 0;  //Reset shutdown checks after 1s timeout
   }
-  switch(command){//Check for commands
+  switch (command) {  //Check for commands
     case 0xff:
-      for(int i = 0; i < 3; i++){//Set the latest shutdownCheck
-        if(shutdownCheck[i] == 0){
+      for (int i = 0; i < 3; i++) {  //Set the latest shutdownCheck
+        if (shutdownCheck[i] == 0) {
           shutdownCheck[i] = 0xFF;
           break;
         }
       }
-      if(shutdownCheck[0] == 0xff && shutdownCheck[1] == 0xff && shutdownCheck[2] == 0xff){//Write shutdown flag to EEPROM
-        EEPROM.write(0,0xff);
-        EEPROM.write(1,0xff);
-        EEPROM.write(2,0xff);
-        if(debug){Serial.println("Shutdown!");}
+      if (shutdownCheck[0] == 0xff && shutdownCheck[1] == 0xff && shutdownCheck[2] == 0xff) {  //Write shutdown flag to EEPROM
+        EEPROM.write(0, 0xff);
+        EEPROM.write(1, 0xff);
+        EEPROM.write(2, 0xff);
+        if (debug) { Serial.println("Shutdown!"); }
       }
       break;
     case 0x01:
@@ -887,17 +963,17 @@ void commands(char command){//Alleon Oxales
       break;
     case 0x08:
       debug = !debug;
-      break;  
+      break;
   }
   time_last_command = millis();
-}//end commands
-void printErr(){
-  for(int i = 0; i < 32; i++){
-    int check = i + errorCodes[i]*32;
-    switch(check){
-      case PRGM_ERR+32:Serial.print("PRGM_ERR  ");break;
-      case ALT_OUT_RANGE+32:Serial.print("ALT_OUT_RANGE  ");break;
-      case LAT_OUT_RANGE+32:Serial.print("LAT_OUT_RANGE  ");break;
+}  //end commands
+void printErr() {
+  for (int i = 0; i < 32; i++) {
+    int check = i + errorCodes[i] * 32;
+    switch (check) {
+      case PRGM_ERR + 32: Serial.print("PRGM_ERR  "); break;
+      case ALT_OUT_RANGE + 32: Serial.print("ALT_OUT_RANGE  "); break;
+      case LAT_OUT_RANGE + 32: Serial.print("LAT_OUT_RANGE  "); break;
       case LONG_OUT_RANGE + 32: Serial.print("LONG_OUT_RANGE  "); break;
       case VEL_OUT_RANGE + 32: Serial.print("VEL_OUT_RANGE  "); break;
       case ORIENT_X_OUT_RANGE + 32: Serial.print("ORIENT_X_OUT_RANGE  "); break;
@@ -927,8 +1003,8 @@ void printErr(){
     }
   }
   Serial.println();
-}//end printErr
-void printRTC(){
+}  //end printErr
+void printRTC() {
   rtc.refresh();
 
   Serial.print("Current Date & Time: ");
@@ -939,23 +1015,23 @@ void printRTC(){
   Serial.print(rtc.day());
 
   Serial.print(" (");
-  Serial.print(daysOfTheWeek[rtc.dayOfWeek()-1]);
-   Serial.print(") ");
+  Serial.print(daysOfTheWeek[rtc.dayOfWeek() - 1]);
+  Serial.print(") ");
 
   Serial.print(rtc.hour());
   Serial.print(':');
   Serial.print(rtc.minute());
   Serial.print(':');
   Serial.println(rtc.second());
-}//end printRTC
-long epoch(){
+}  //end printRTC
+long epoch() {
   rtc.refresh();
-  struct tm timeinfo = {0}; // Initialize all fields to zero
+  struct tm timeinfo = { 0 };  // Initialize all fields to zero
 
   // Set up date and time components
-  timeinfo.tm_year = rtc.year() + 100; // Years since 1900
-  timeinfo.tm_mon = rtc.month() - 1;       // Month, where 0 = January
-  timeinfo.tm_mday = rtc.day();           // Day of the month
+  timeinfo.tm_year = rtc.year() + 100;  // Years since 1900
+  timeinfo.tm_mon = rtc.month() - 1;    // Month, where 0 = January
+  timeinfo.tm_mday = rtc.day();         // Day of the month
   timeinfo.tm_hour = rtc.hour();
   timeinfo.tm_min = rtc.minute();
   timeinfo.tm_sec = rtc.second();
@@ -964,4 +1040,4 @@ long epoch(){
   time_t epochTime = mktime(&timeinfo);
 
   return static_cast<long>(epochTime);
-}// end epoch
+}  // end epoch

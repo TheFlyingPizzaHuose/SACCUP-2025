@@ -77,7 +77,7 @@ const int PRGM_ERR = 0,
     LSM9SD1_FAIL = 28;
 
 void setup() {
-    Serial.begin(57600); // Start serial communication at 57600 baud rate
+    Serial.begin(115200); // Start serial communication at 57600 baud rate
     rfSerial.begin(57600);
     Serial.println("Ground Station Ready!");
 
@@ -99,13 +99,13 @@ int last_time = millis();
 int msg_recieved = false;
 void loop() {
   static char charArray[17] = {};
-  if (rf95.available()) {
+  if (false && rf95.available()) {
     // Should be a message for us now
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
     uint8_t len = sizeof(buf);
 
     if (rf95.recv(buf, &len)) {
-      Serial.print("||RFD||");
+      Serial.print("||RFM||");
       msg_recieved = true;
       for(int i = 0; i<17; i++){
         int* bins = uint_to_binary(buf[i]);
@@ -131,7 +131,7 @@ void loop() {
     charArray[message_index] = data;
     if(data == 'L' && lastData == 'R'){//Checks if end characters are present
       if(message_index == 16){
-        Serial.print("||RFM||");
+        Serial.print("||RFD||");
         msg_recieved = true;
         for(int i = 0; i<17; i++){
           int* bins = uint_to_binary(charArray[i]);

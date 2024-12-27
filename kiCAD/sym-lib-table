@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "SACCUP-2025")(type "KiCad")(uri "${KIPRJMOD}/SACCUP-2025.kicad_sym")(options "")(descr ""))
+)

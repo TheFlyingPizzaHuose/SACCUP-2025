@@ -1,0 +1,5 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "SACCUP-2025")(type "KiCad")(uri "${KIPRJMOD}/SACCUP-2025.pretty")(options "")(descr ""))
+  (lib (name "kiCAD")(type "KiCad")(uri "/home/alleon/Documents/Project Star Striker/kiCAD.pretty")(options "")(descr ""))
+)

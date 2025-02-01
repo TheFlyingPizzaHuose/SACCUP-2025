@@ -1,12 +1,10 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
-#include <chrono>
-
+// #include <chrono>
 using namespace std;
-using namespace std::chrono;
-// Coded by Elizabeth McGhee -----------------------------------------------------------------------------------------------
-// Matrix operations for using a Kalman filter. Still in progress. 
+// Elizabeth McGhee Kalman Filter code still in progress
+
 float find_det(vector<vector<float>> my_arr, int n){
     float det = 1.0; 
  
@@ -27,7 +25,8 @@ float find_det(vector<vector<float>> my_arr, int n){
     return det;
 }
 
-vector<vector<float>> transposeMat(vector<vector<float>> mat, int n) {
+vector<vector<float>> transposeMat(vector<vector<float>> mat) {
+  int n = mat.size();
   vector<vector<float>> my_result(n, vector<float>(n, 0));
   for (int i = 0; i < my_result.size(); i++) {
     for (int j = 0; j < my_result[i].size(); j++) {
@@ -85,7 +84,7 @@ vector<vector<float>> cofactor(vector<vector<float>> my_vector, int n){
 vector<vector<float>> get_inverse(vector<vector<float>> my_vector, int n){
     vector<vector<float>> result(n, vector<float>(n, 0)); 
     float det = find_det(my_vector, n);
-    result = transposeMat(cofactor(my_vector, n), n);
+    result = transposeMat(cofactor(my_vector, n));
     for (int i = 0; i < n; i++){
         for (int j = 0; j < n; j++){
             result[i][j] = result[i][j] / det;
@@ -95,7 +94,9 @@ vector<vector<float>> get_inverse(vector<vector<float>> my_vector, int n){
     return result;
 }
 
-vector<vector<float>> matrix_addition(vector<vector<float>> mat1, vector<vector<float>> mat2, int m, int n){
+vector<vector<float>> matrix_addition(vector<vector<float>> mat1, vector<vector<float>> mat2){
+    int m = mat1.size();
+    int n = mat2.size();
     vector<vector<float>> my_result(m, vector<float>(n, 0));
     for (int i = 0; i < m; i++) {
       for (int j = 0; j < n; j++) {
@@ -105,7 +106,11 @@ vector<vector<float>> matrix_addition(vector<vector<float>> mat1, vector<vector<
     return my_result;
   }
 
-vector<vector<float>> matrix_multiplication(vector<vector<float>> mat1, vector<vector<float>> mat2, int r1, int r2, int c1, int c2){
+vector<vector<float>> matrix_multiplication(vector<vector<float>> mat1, vector<vector<float>> mat2){
+    int r1 = mat1.size();
+    int c1 = mat1[0].size();
+    int r2 = mat2.size();
+    int c2 = mat2[0].size();
     vector<vector<float>> my_result(r1, vector<float>(c2, 0));
     for (int i = 0; i < r1; i++) {
       for (int j = 0; j < c2; j++) {
@@ -118,9 +123,9 @@ vector<vector<float>> matrix_multiplication(vector<vector<float>> mat1, vector<v
   return my_result;
 }
 
-vector<vector<float>> subtractMat(vector<vector<float>> mat1,
-                                           vector<vector<float>> mat2, int r1,
-                                           int c1, int r2, int c2) {
+vector<vector<float>> subtractMat(vector<vector<float>> mat1, vector<vector<float>> mat2) {
+  int r1 = mat1.size();
+  int c1 = mat1[0].size();
   vector<vector<float>> my_result(r1, vector<float>(c1, 0));
   for (int i = 0; i < my_result.size(); i++) {
       for (int j = 0; j < my_result[i].size(); j++) {
@@ -130,29 +135,55 @@ vector<vector<float>> subtractMat(vector<vector<float>> mat1,
   return my_result;
 }
 
-    
+// Theoretically works
+vector<vector<float>> predict_state(vector<vector<float>> state_0, vector<vector<float>> a_matrix){
+  return matrix_multiplication(a_matrix, state_0);
+}
+
+// 
+vector<vector<float>> predict_error_covariance(vector<vector<float>> a_matrix, vector<vector<float>> p_0, vector<vector<float>> q_matrix){
+  vector<vector<float>> result = matrix_multiplication(a_matrix, p_0);
+  return matrix_addition(matrix_multiplication(result, transposeMat(a_matrix)), q_matrix);
+}
+
+vector<vector<float>> kalman_gain(vector<vector<float>> p_0, vector<vector<float>> h_matrix, vector<vector<float>> r_matrix){
+  vector<vector<float>> result = matrix_multiplication(h_matrix, p_0);
+  vector<vector<float>> result_two = transposeMat(h_matrix);
+  vector<vector<float>> result_three = matrix_multiplication(result, result_two);
+  vector<vector<float>> result_four = matrix_multiplication(p_0, result_two);
+  return matrix_multiplication(result_three, get_inverse(matrix_addition(result_three, r_matrix), r_matrix.size()));
+}
+
+vector<vector<float>> estimate(vector<vector<float>> x_0, vector<vector<float>> z_0, vector<vector<float>> h_matrix, vector<vector<float>>K_matrix){
+  vector<vector<float>> result = subtractMat(z_0, matrix_multiplication(h_matrix, x_0));
+  return matrix_addition(x_0, matrix_multiplication(K_matrix, result));
+}
+
+vector<vector<float>> compute_error_covariance(vector<vector<float>> p_0, vector<vector<float>> K_matrix, vector<vector<float>> h_matrix){
+  vector<vector<float>> result = matrix_multiplication(K_matrix, h_matrix);
+  return matrix_addition(p_0, matrix_multiplication(result, p_0));
+}
+
+
 int main(){
 
 
-    vector<vector<float>> matrix; 
-    matrix = {{-1.0, 2.2, -3.5, 5.4, -9.2, 6.5, -1.2, 11.1123, 1.02359, 13.9}, 
-              {1.1, -2.1, -3.1, 5.1, -9.2, 6.5, 4.05, 23.83, 0.32, 13.38}, 
-              {1.2, -2.32, 3.2, -5.2, -9.2, 6.5, -1.02, 11.13422, 1.0159, 13.8},
-              {-1.3, 2.35, 3.3, 5.3, -9.2, 6.5, 4.125, -1.9292, -4.802, -1.0902},
-              {-1.4, -2.4, 6.85, 4.25, -1.944, -2.3002, -1.87652, 11.6781, 1.09234, 13.7},
-              {5.5, -9.2, 6.5, -4.35, -1.93, -1.002, -1.989752, 11.1687, 1.0952, 13.36},
-              {-1.6, 2.6, 3.6, 5.6, -9.2, 6.5, -14.5, 0.112, 1.09, 13.6},
-              {1.7, -2.7, 3.77, 5.7, -9.2, 6.5, 32.0025, 0.322, -0.11112, 1.9992},
-              {-1.8, -2.8, -3.8, 5.8, -9.2, 6.5, 14.532, 11.6781, 3.009, 13.4},
-              {1.9, 2.9, -3.98, -5.9, -0.2432, -5.402, -1.2, 11.1, 1.09, 13.34}};
-    auto start = high_resolution_clock::now();
-    get_inverse(matrix, 10);
-    auto stop = high_resolution_clock::now();
-    auto duration = duration_cast<microseconds>(stop - start);
+    vector<vector<float>> matrix_a = {{1, 2, 3},{9, 45, 3}, {9,13, 3}};
+    vector<vector<float>> x_0 = {{1}, {-9.0}, {2.3}};
+    vector<vector<float>> P_0 = {{5, 9.3, 9.0}, {-1.9, -1.3, -.09}, {2.3, -3.4, -6.5}};
+    vector<vector<float>> matrix_q = {{-3.4, -4.3, 7.5}, {8.4, -4.8, 9.32}, {-9.2, 3.4, 3.11}};
+    vector<vector<float>> matrix_h = {{1, 3, 2}, {8.3, 2.01, 9.2}, {11.2, -93.3, 74.2}};
+    vector<vector<float>> matrix_r = {{2.1, 3.1, 0.9}, {-1.2, -11.2, -98.2}, {0.07, -0.2, 3.34}};
+    vector<vector<float>> predicted_state = predict_state(x_0, matrix_a);
+    vector<vector<float>> predicted_error_covariance = predict_error_covariance(matrix_a, P_0, matrix_q);
+    vector<vector<float>> kalman_gain_matrix = kalman_gain(P_0, matrix_h, matrix_r);
 
-    cout << duration.count() << " microseconds" << endl;   
-    cout << find_det(matrix, 10) << endl;
-
+    for (int i = 0; i < kalman_gain_matrix.size(); i++){
+      for (int j = 0; j < kalman_gain_matrix[i].size(); j++){
+        cout << kalman_gain_matrix[i][j]<< " ";
+        }
+      cout << endl;
+    }
     return 0;
 }
 

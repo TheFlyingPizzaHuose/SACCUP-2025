@@ -6,6 +6,16 @@
 #include <vector>
 using namespace std;
 
+vector<double> quaternion_mult(vector<double> mat1, vector<double> mat2){
+    vector<double> result(4, 1);
+    result[0] = mat1[0] * mat2[0] - mat1[1] * mat2[1] - mat1[2] * mat2[2] - mat1[3] * mat2[3];
+    result[1] = mat1[0] * mat2[1] + mat1[1] * mat2[0] + mat1[2] * mat2[3] - mat1[3] * mat2[2];
+    result[2] = mat1[0] * mat2[2] + mat1[2] * mat2[0] - mat1[1] * mat2[3] + mat1[3] * mat2[1];
+    result[3] = mat1[0] * mat2[3] + mat1[3] * mat2[0] + mat1[1] * mat2[2] - mat1[2] * mat2[1];
+
+    return result;
+}
+
 vector<vector<double>> triangulate(vector<vector<double>> my_mat){
     int n = my_mat.size();
     for (int i = 0; i < n-1; i++){

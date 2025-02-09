@@ -157,5 +157,13 @@ vector<vector<double>> subtractMat(vector<vector<double>> mat1, vector<vector<do
     }
   return my_result;
 }
+vector<vector<double>> cross_product(vector<vector<double>> mat1, vector<vector<double>> mat2){
+    vector<vector<double>> result(3, vector<double>(1,0));
+    result[0][0] = mat1[1][0]*mat2[2][0] - mat1[2][0] * mat2[1][0];
+    result[1][0] = mat1[0][0]*mat2[2][0] - mat1[2][0] * mat2[0][0];
+    result[2][0] = mat1[0][0]*mat2[1][0] - mat1[1][0] * mat2[0][0];
+
+    return result;
+}
 
 #endif /* kalman_filter_h */

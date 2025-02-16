@@ -98,7 +98,7 @@ Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(&Wire);
 static sensors_event_t LSM_acc, LSM_gyro, LSM_mag, LSM_temp;
 Adafruit_BMP085 bmp2;
 Adafruit_BMP085 bmp3;
-Adafruit_ADXL375 adxl = Adafruit_ADXL375(12345);
+Adafruit_ADXL375 adxl = Adafruit_ADXL375(12345, &Wire1);
 
 int gpsVersion = 2;  //SAM-M8Q
 
@@ -256,7 +256,7 @@ void setup() {
   //rtc.set(0, 22, 12, 5, 14, 11, 24);// Set the time rtc.set(second, minute, hour, dayOfWeek, dayOfMonth, month, year) (1=Sunday, 7=Saturday)
 
   if (!SD.begin(sdSelect)) { setErr(SD_FAIL); }  //Init SD, this comes first to be able to check the latest log file
-  if (true || detect_good_shutdown()) {
+  if (detect_good_shutdown()) {
     normalStart();
   } else {
     setErr(MAIN_PWR_FAULT);
@@ -311,6 +311,7 @@ void loop() {
     }
     if (micros() - BMP280_LAST > BMP280_RATE) {
       BMP280_PRESS = bmp1.readPressure();
+      altitude = BMP180_1_PRESS;
       BMP280_LAST = micros();
     }
     if (micros() - BMP180_LAST > BMP180_RATE) {
@@ -354,9 +355,9 @@ void normalStart() {
   if (!lsm.begin()) { setErr(LSM9SD1_FAIL); }
   setupLSM();  //Setups LSM range of measurement
   if (!bmp1.begin()) { setErr(BMP280_FAIL); }  
-  if (!bmp2.begin(1, &Wire2) /*0: low power, 1: normal, 2: high res, 3: ultra high*/) { setErr(BMP180_1_FAIL); }
-  if (!bmp3.begin(1, &Wire1) /*0: low power, 1: normal, 2: high res, 3: ultra high*/) { setErr(BMP180_2_FAIL); }
+  if (!bmp2.begin(3, &Wire2) /*0: low power, 1: normal, 2: high res, 3: ultra high*/) { setErr(BMP180_1_FAIL); }
   if (!adxl.begin()) { setErr(ADXL375_FAIL); }
+  if (!bmp3.begin(3, &Wire1) /*0: low power, 1: normal, 2: high res, 3: ultra high*/) { setErr(BMP180_2_FAIL); }
   //adxl.setRange(ADXL345_RANGE_16_G);
 
   logfile = SD.open(checkFile(), FILE_WRITE);  //Opens new file with highest index

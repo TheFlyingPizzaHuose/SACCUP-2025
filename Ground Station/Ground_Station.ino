@@ -24,7 +24,7 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 RH_RF95 rf95(RFM95_CS, RFM95_INT);
 const int RFM9X_PWR = 23;
 
-#define rfSerial Serial1
+#define rfSerial Serial2
 
 int bitLengthList[13] = {12,//Seconds since launch
                         1, //Sender Ident
@@ -77,9 +77,14 @@ const int PRGM_ERR = 0,
     LSM9SD1_FAIL = 28;
 
 void setup() {
-    Serial.begin(115200); // Start serial communication at 57600 baud rate
-    rfSerial.begin(57600);
-    Serial.println("Ground Station Ready!");
+  Serial.begin(115200); // Start serial communication at 57600 baud rate
+  rfSerial.begin(57600);
+  Serial.println("Ground Station Ready!");
+
+  uint32_t reset_reason = SRC_SRSR;  // Read reset status register
+
+  Serial.print("Reset reason (raw value): 0x");
+  Serial.println(reset_reason);
 
   //RFM9x start
   pinMode(RFM95_RST, OUTPUT);
@@ -126,12 +131,13 @@ void loop() {
       Serial.println("Sent a reply");
       digitalWrite(LED_BUILTIN, LOW);*/
     }
-  }else if (rfSerial.available()) {
+  }
+  if (rfSerial.available()) {
     char data = rfSerial.read(); // Read from software serial
     charArray[message_index] = data;
     if(data == 'L' && lastData == 'R'){//Checks if end characters are present
       if(message_index == 16){
-        Serial.print("||RFD||");
+        Serial.println("||RFD||");
         msg_recieved = true;
         for(int i = 0; i<17; i++){
           int* bins = uint_to_binary(charArray[i]);
@@ -140,12 +146,13 @@ void loop() {
             //Serial.print(bitArray[i*8 + x]);
           }
         }
-        message_index = 0;
       }
+      message_index = 0;
     }else{
       message_index++;
     }
     lastData = data;
+    last_time = millis();
   }
   if(msg_recieved){
     int bit_arr_read_pos = 0;
@@ -163,7 +170,6 @@ void loop() {
       telemetry[i] = my_sum;
       bit_arr_read_pos+=bitLengthList[i];
     }
-    Serial.println();
     for(int i = 0; i < 13; i++){
       switch(i){
         case 0: Serial.print("T+: "); Serial.print(telemetry[i]);break;
@@ -187,9 +193,10 @@ void loop() {
       }
     }
     msg_recieved=false;
+  }else if(millis() - last_time > 1000){
+    Serial.println("Waiting For Signal");
+    last_time = millis();
   }
-  
-  last_time = millis();
   if (Serial.available()) {
       char data = Serial.read();
       if(data == 'F'){
@@ -203,6 +210,7 @@ void loop() {
           rfSerial.print(data);
         }
       }
+    Serial.clear();
   }
 }
 

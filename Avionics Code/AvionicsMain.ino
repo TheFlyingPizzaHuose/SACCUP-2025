@@ -54,7 +54,7 @@ const int RFM9X_PWR = 23;
 int16_t packetnum = 0;  // packet counter, we increment per xmission
 
 
-bool debug = 0;
+const bool debug = 0;
 
 //pin assignments
 const int lowpower_pin = 2;
@@ -105,15 +105,16 @@ int gpsVersion = 2;  //SAM-M8Q
 // AV Modes
 bool lowPower = 0;
 bool lowDataTransfer = 1;            //Default is 1
-int shutdownCheck[3] = { 0, 0, 0 };  //All three elements must be >0 to activate shutdown
+int shutdownCheck[3] = {0, 0, 0};  //All three elements must be >0 to activate shutdown
+int restartCheck[3] = {0, 0, 0}; //All three elements must be >0 to activate restart
 int time_last_command = 0;
 
 int bitLengthList[10] = {
   12,  //Seconds since launch
   1,   //Sender Ident
   12,  //Altitude
-  12,  //Latitude
-  12,  //Lonitude
+  12,  //PositionY
+  12,  //PositionX
   9,   //Velocity
   8,   //OrientationX
   8,   //OrientationY
@@ -182,15 +183,16 @@ uint BMP280_LAST = 0,
 uint time_launch = 0;
 uint last_millis = 0;
 uint last_micros = 0;
-float time_since_launch = 0;  //seconds
+float time_since_launch = 0;
+
+//Start Variables
+float pos_start[3] = {0, 0, 0};
+
 
 //Telemetry Variables
 int sender_indent = 1;  //0: Avionics 1: Payload drone
-float altitude = 0,     //meters
-  latitude = 0,         //meters
-  longitude = 0,        //meters
-  velocity = 0,         //meters per second
-  orientationX = 0,     //degrees
+bool in_flight = 0;
+float orientationX = 0,     //degrees
   orientationY = 0;     //degrees
 
 //Sensor Data
@@ -222,16 +224,19 @@ float BMP280_PRESS = 0,
 
 
 //Kinematics variables
-float pos[3] = { 0, 0, 0 },  //Absolute position measurements
-  vel[3] = { 0, 0, 0 },      //Velocity measurements
+float latitude = 0,         //degrees,minutes,seconds,arcseconds
+      longitude = 0;        //degrees,minutes,seconds,arcseconds
+float position[3] = { 0, 0, 0 },  //Absolute position measurements
+  velocity[3] = { 0, 0, 0 },      //Velocity measurements
   acc[3] = { 0, 0, 0 },      //Acceleration measurement
-  abs_rot[3] = { 0, 0, 0 },  //Absolute rotation measurements
+  abs_rot[4] = { 1, 0, 0, 0 },  //Absolute rotation measurements
   dt_rot[3] = { 0, 0, 0 },   //Derivatie rotation measurements
   d2_rot[3] = { 0, 0, 0 };   //2nd Derivative rotation measurements
 void setup() {
   Serial.begin(57600);    // Start hardware serial communication (for debugging)
   rfSerial.begin(57600);  //Init RFD UART
 
+  if(SRC_SRSR != 1){setErr(PRGM_ERR);}// Read reset status register and PRGM_ERR if reset is not a power cycle
   //RFM9x start
   pinMode(RFM95_RST, OUTPUT);
   digitalWrite(RFM95_RST, HIGH);
@@ -253,7 +258,7 @@ void setup() {
   pinMode(shutdown_pin, OUTPUT);
 
   URTCLIB_WIRE.begin();
-  //rtc.set(0, 22, 12, 5, 14, 11, 24);// Set the time rtc.set(second, minute, hour, dayOfWeek, dayOfMonth, month, year) (1=Sunday, 7=Saturday)
+  //rtc.set(0, 57, 19, 2, 17, 2, 25);// Set the time rtc.set(second, minute, hour, dayOfWeek, dayOfMonth, month, year) (1=Sunday, 7=Saturday)
 
   if (!SD.begin(sdSelect)) { setErr(SD_FAIL); }  //Init SD, this comes first to be able to check the latest log file
   if (detect_good_shutdown()) {
@@ -297,6 +302,8 @@ void loop() {
     if (micros() - AS5600_LAST > AS5600_RATE) {
       AS5600_1_ANG = readRawAngle(&Wire);
       AS5600_2_ANG = readRawAngle(&Wire1);
+      logfile.println(AS5600_2_ANG);
+      logfile.flush();
       if (AS5600_1_ANG < 0) {
         setErr(AS5600_1_FAIL);
       } else {
@@ -311,11 +318,12 @@ void loop() {
     }
     if (micros() - BMP280_LAST > BMP280_RATE) {
       BMP280_PRESS = bmp1.readPressure();
-      altitude = BMP180_1_PRESS;
       BMP280_LAST = micros();
     }
     if (micros() - BMP180_LAST > BMP180_RATE) {
       BMP180_1_PRESS = bmp2.readPressure();
+      //Serial.println(BMP180_1_PRESS);
+      position[2] = BMP180_1_PRESS;
       BMP180_2_PRESS = bmp3.readPressure();
       BMP180_LAST = micros();
     }
@@ -370,7 +378,7 @@ void normalStart() {
   logfile.print("TIME(us), BMP280_PRESS, LAT, LON, MPU_AX, MPU_AY, MPU_AZ, BMP180_1_PRESS");
   logfile.print("BMP180_2_PRESS, AS5600_1_ANG, AS5600_2_ANG, ADXL345_AX, ADXL345_AY");
   logfile.println("ADXL345_AZ, LSM_AX, LSM_AY, LSM_AZ");  // write header at top of log file
-  logfile.close();
+  logfile.flush();
 }
 void dynamicStart() {  //W.I.P.
 }
@@ -586,21 +594,36 @@ void readGPS(char* msg, byte size) {  //Alleon Oxales
   }
   if (debug) { Serial.print("||||"); }
 }  //end readGPS
-void parseLatLong(char* value, byte size) {  //Alleon Oxales W.I.P.
-  static uint hunds, tens, ones;             //Converting string to integer
-  if (size == 10) {                          //Latitude
-    tens = *value - '0';
-    ones = *(value + 1) - '0';                        //Converting string to integer
-    latitude = static_cast<float>(tens * 10 + ones);  //Converting integer to float
-    Serial.println(latitude);
+void parseLatLong(char* value, byte size) {//converts text lat, long to float, Alleon Oxales
+  float power = 10000;
+  float sum = 0;
+  if(size == 10){power = 1000;} //Change power of ten to ten if size is for lattitude, otherwise keep it at 100
+  if(size >= 10){
+    for(int i = 0; i < size; i++){
+      if(*(value + i) != '.'){
+        sum = sum + power*(*(value + i) - '0');
+        power = power/10;
+      }
+    }
   }
-  if (size == 11) {  //Longitude
-    hunds = *value - '0';
-    tens = *(value + 1) - '0';
-    ones = *(value + 2) - '0';                                           //Converting string to integer
-    longitude = static_cast<float>((hunds * 100) + (tens * 10) + ones);  //Converting integer to float
-    Serial.println(longitude);
+  if (size == 10) {//Latitude
+    latitude = sum;  //Converting integer to float
+    if(pos_start[1] == 0){pos_start[1] = gps_to_xy(sum);}//Set starting latitude
+    position[1] = gps_to_xy(sum);
+    logfile.print(String(latitude,10));
+    logfile.flush();
   }
+  if (size == 11) {//Longitude
+    longitude = sum;  //Converting integer to float
+    if(pos_start[0] == 0){pos_start[0] = gps_to_xy(sum);}//Set starting latitude
+    position[0] = gps_to_xy(sum);
+    logfile.println(String(longitude,10));
+    logfile.flush();
+  }
+}  //end parseLatLong
+float gps_to_xy(float coord){//Converts gps coordinates to meters north and east, Alleon Oxales WIP
+  float result = 111319.490793*(std::fmod(coord,100) + std::remainder(coord,100)/60); // 111319.490793 = 2*PI*Radius_Earth/360
+  return result;
 }
 //============================
 
@@ -622,7 +645,7 @@ void sendRFD() {
     }
     RFD_LAST = micros();
     //printRTC();
-    printErr();
+    //printErr();
   }
 }
 void sendRFM() {
@@ -655,12 +678,12 @@ char* readyPacket() {  //Combines telemetry into bit array then convert to char 
       float datum = 0;
       switch (i) {
         case 0: datum = time_since_launch; break;
-        case 2: datum = altitude; break;
-        case 3: datum = latitude; break;
-        case 4: datum = longitude; break;
-        case 5: datum = velocity; break;
-        case 6: datum = orientationX; break;
-        case 7: datum = orientationY; break;
+        case 2: datum = position[2] - pos_start[2]; break;
+        case 3: datum = position[1] - pos_start[1]; break;
+        case 4: datum = position[0] - pos_start[0]; break;
+        case 5: datum = sqrt(velocity[0] * velocity[0] + velocity[1] * velocity[1] + velocity[2] * velocity[2]); break;
+        case 6: datum = 255; break;
+        case 7: datum = 255; break;
       }
       int* bitsPtr = dec_to_binary(datum, dataLength);
       for (int x = 0; x < dataLength; x++) {
@@ -686,14 +709,9 @@ char* readyPacket() {  //Combines telemetry into bit array then convert to char 
   int charIndex = 0;
   for (int i = 0; i < bitArrayLength; i += 8) {
     char result = 0;
-    result |= (bitArray[i] << 7);      // Set bit 7
-    result |= (bitArray[i + 1] << 6);  // Set bit 6
-    result |= (bitArray[i + 2] << 5);  // Set bit 5
-    result |= (bitArray[i + 3] << 4);  // Set bit 4
-    result |= (bitArray[i + 4] << 3);  // Set bit 3
-    result |= (bitArray[i + 5] << 2);  // Set bit 2
-    result |= (bitArray[i + 6] << 1);  // Set bit 1
-    result |= (bitArray[i + 7] << 0);  // Set bit 0
+    for (int j = 0; j <= 7; j++){
+      result |= (bitArray[i + j] << (7-j));
+    }
     charArray[charIndex] = result;
     charIndex++;
   }
@@ -732,16 +750,19 @@ float binary_to_dec(int my_bit_size, int* my_arr) {
   }
   return my_sum;
 }  //end binary to decimal
-int* uint_to_binary(char character) {
+int* uint_to_binary(char character) { //Leiana Mendoza
   static int result[8];
-  result[0] = (character & (1 << 7)) > 0;
+  for (int i = 0; i <= 7; i++) {
+    result[i] = (character & (1 << (7-i))) > 0;
+  }
+  /*result[0] = (character & (1 << 7)) > 0;
   result[1] = (character & (1 << 6)) > 0;
   result[2] = (character & (1 << 5)) > 0;
   result[3] = (character & (1 << 4)) > 0;
   result[4] = (character & (1 << 3)) > 0;
   result[5] = (character & (1 << 2)) > 0;
   result[6] = (character & (1 << 1)) > 0;
-  result[7] = (character & (1 << 0)) > 0;
+  result[7] = (character & (1 << 0)) > 0;*/
   return result;
 }  //end uint_to_binary
 //==============================
@@ -752,19 +773,19 @@ void event_detection() {
   float g = 9.81;
   // The index is in the following ascending order: liftoff, burnout, apogee, drogue deploy, main deplot, landed
   // Liftoff =================================================
-  if (altitude > 50.0 and acc[2] > 2 * g) {
+  if (position[2] > 50.0 and acc[2] > 2 * g) {
     my_event_arr[0] = 1;
   } else {
     my_event_arr[0] = 0;
   }
   // Burnout =================================================
-  if (altitude > dummy_variable and acc[2] < g) {
+  if (position[2] > dummy_variable and acc[2] < g) {
     my_event_arr[1] = 1;
   } else {
     my_event_arr[1] = 0;
   }
   // Apogee ==================================================
-  if (vel[2] < 0) {
+  if (velocity[2] < 0) {
     my_event_arr[2] = 1;
   } else {
     my_event_arr[2] = 0;
@@ -772,7 +793,7 @@ void event_detection() {
   // Drogue Deploy ===========================================
   // Main Deploy =============================================
   // Landed ==================================================
-  if (altitude < 50.0) {
+  if (position[2] < 50.0) {
     my_event_arr[3] = 1;
   } else {
     my_event_arr[3] = 0;
@@ -923,9 +944,7 @@ void clearErr(int errorCode) {
 }  //end clearErr
 void commands(char command) {  //Alleon Oxales
   if (shutdownCheck[2] == 0 && millis() - time_last_command > 1000) {
-    shutdownCheck[0] = 0;
-    shutdownCheck[1] = 0;
-    shutdownCheck[2] = 0;  //Reset shutdown checks after 1s timeout
+    memset(shutdownCheck, 0, sizeof(shutdownCheck));//Reset shutdown checks after 1s timeout
   }
   switch (command) {  //Check for commands
     case 0xff:
@@ -939,6 +958,7 @@ void commands(char command) {  //Alleon Oxales
         EEPROM.write(0, 0xff);
         EEPROM.write(1, 0xff);
         EEPROM.write(2, 0xff);
+        logfile.close();
         if (debug) { Serial.println("Shutdown!"); }
       }
       break;
@@ -955,15 +975,28 @@ void commands(char command) {  //Alleon Oxales
       lowDataTransfer = 1;
       break;
     case 0x05:
-      normalStart();
-      errorCodes[MAIN_PWR_FAULT] = 0;
+      for (int i = 0; i < 3; i++) {  //Set the latest shutdownCheck
+        if (restartCheck[i] == 0) {
+          restartCheck[i] = 0xFF;
+          break;
+        }
+      }
+      if (restartCheck[0] == 0xff && restartCheck[1] == 0xff && restartCheck[2] == 0xff) {  //Write shutdown flag to EEPROM
+        EEPROM.write(0, 0xff);
+        EEPROM.write(1, 0xff);
+        EEPROM.write(2, 0xff);
+        if (debug) { Serial.println("Restart!"); }
+        normalStart();
+        errorCodes[MAIN_PWR_FAULT] = 0;
+        memset(shutdownCheck, 0, sizeof(shutdownCheck));
+        memset(restartCheck, 0, sizeof(restartCheck));
+      }
       break;
     case 0x06:
       break;
     case 0x07:
       break;
     case 0x08:
-      debug = !debug;
       break;
   }
   time_last_command = millis();

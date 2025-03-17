@@ -25,6 +25,7 @@ RH_RF95 rf95(RFM95_CS, RFM95_INT);
 const int RFM9X_PWR = 23;
 
 #define rfSerial Serial2
+bool radio_debug = false;
 
 int bitLengthList[13] = {12,//Seconds since launch
                         1, //Sender Ident
@@ -93,9 +94,11 @@ void setup() {
   digitalWrite(RFM95_RST, LOW);
   delay(10);
   digitalWrite(RFM95_RST, HIGH);
-  while (!rf95.init()) {Serial.println("RFM9X_FAIL");}
-  rf95.setFrequency(RF95_FREQ);
-  rf95.setTxPower(RFM9X_PWR, false);
+  if (!rf95.init()) {Serial.println("RFM9X_FAIL");}
+  else{
+    rf95.setFrequency(RF95_FREQ);
+    rf95.setTxPower(RFM9X_PWR, false);
+  }
 }
 
 char lastData = 0;
@@ -134,6 +137,7 @@ void loop() {
   }
   if (rfSerial.available()) {
     char data = rfSerial.read(); // Read from software serial
+    Serial.print(data);
     charArray[message_index] = data;
     if(data == 'L' && lastData == 'R'){//Checks if end characters are present
       if(message_index == 16){
@@ -194,7 +198,8 @@ void loop() {
     }
     msg_recieved=false;
   }else if(millis() - last_time > 1000){
-    Serial.println("Waiting For Signal");
+    Serial.println("Waiting For Signal, Ensure terminal is set to: No Line Ending");
+    if(radio_debug){Serial.println("Radio Debugging Active");}
     last_time = millis();
   }
   if (Serial.available()) {
@@ -202,13 +207,17 @@ void loop() {
       if(data == 'F'){
           data = 0xff;
           rfSerial.print(data);
+      }else if(data == 's'){
+        radio_debug = !radio_debug;
       }else if(data == 'h'){
         printCommands();
-      }else{
+      }else if(!radio_debug){
         for(int i = 0; i < 10; i++){
           data = data - '0';
           rfSerial.print(data);
         }
+      }else{
+          rfSerial.print(data);
       }
     Serial.clear();
   }

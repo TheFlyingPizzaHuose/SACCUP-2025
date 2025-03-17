@@ -665,7 +665,8 @@ void sendRFM() {
     RFM_LAST = micros();
   }
 }
-char* readyPacket() {  //Combines telemetry into bit array then convert to char array
+char* readyPacket() {  //Leiana Mendoza -      
+Combines telemetry into bit array then convert to char array
   int bitArray[bitArrayLength] = {};
   static char charArray[charArrayLegnth]{};  //+1 to include checksum byte, static so that the mem alloc is retained throughout the program
   int bitIndex = 0;
@@ -755,14 +756,6 @@ int* uint_to_binary(char character) { //Leiana Mendoza
   for (int i = 0; i <= 7; i++) {
     result[i] = (character & (1 << (7-i))) > 0;
   }
-  /*result[0] = (character & (1 << 7)) > 0;
-  result[1] = (character & (1 << 6)) > 0;
-  result[2] = (character & (1 << 5)) > 0;
-  result[3] = (character & (1 << 4)) > 0;
-  result[4] = (character & (1 << 3)) > 0;
-  result[5] = (character & (1 << 2)) > 0;
-  result[6] = (character & (1 << 1)) > 0;
-  result[7] = (character & (1 << 0)) > 0;*/
   return result;
 }  //end uint_to_binary
 //==============================

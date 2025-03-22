@@ -326,8 +326,6 @@ void loop() {
     if (micros() - AS5600_LAST > AS5600_RATE) {
       AS5600_1_ANG = readRawAngle(&Wire);
       AS5600_2_ANG = readRawAngle(&Wire1);
-      logfile.println(AS5600_2_ANG);
-      logfile.flush();
       if (AS5600_1_ANG < 0) {
         setErr(AS5600_1_FAIL);
       } else {
@@ -339,16 +337,32 @@ void loop() {
         clearErr(AS5600_2_FAIL);
       }
       AS5600_LAST = micros();
+      logfile.print(micros());
+      logfile.print("|6|");
+      logfile.print(AS5600_1_ANG);
+      logfile.print('|');
+      logfile.println(AS5600_2_ANG);
+      logfile.flush();
     }
     if (micros() - BMP280_LAST > BMP280_RATE) {
       BMP280_PRESS = bmp1.readPressure();
       BMP280_LAST = micros();
+      logfile.print(micros());
+      logfile.print("|1|");
+      logfile.println(BMP280_PRESS);
+      logfile.flush();
     }
     if (micros() - BMP180_LAST > BMP180_RATE) {
       BMP180_1_PRESS = bmp2.readPressure();
       position[2] = BMP180_1_PRESS;
       BMP180_2_PRESS = bmp3.readPressure();
       BMP180_LAST = micros();
+      logfile.print(micros());
+      logfile.print("|2|");
+      logfile.print(BMP180_1_PRESS);
+      logfile.print('|');
+      logfile.println(BMP180_2_PRESS);
+      logfile.flush();
     }
     if (micros() - MPU6050_LAST > MPU6050_RATE) {
       //readMPU6050();
@@ -401,9 +415,8 @@ void normalStart() {
   logfile.print((char)((epochTime >> 16) & 0xFF));
   logfile.print((char)((epochTime >> 8) & 0xFF));
   logfile.println((char)(epochTime & 0xFF));
-  logfile.print("TIME(us), BMP280_PRESS, LAT, LON, MPU_AX, MPU_AY, MPU_AZ, BMP180_1_PRESS");
-  logfile.print("BMP180_2_PRESS, AS5600_1_ANG, AS5600_2_ANG, ADXL345_AX, ADXL345_AY");
-  logfile.println("ADXL345_AZ, LSM_AX, LSM_AY, LSM_AZ");  // write header at top of log file
+  logfile.println("TIME(us), Data ID, Data");  // write header at top of log file
+  logfile.println("Data IDs, 0: GPS, 1: BMP280, 2: BMP180 1&2, 3: MPU6050, 4: LSM9DS1, 5: ADXL375, 6: AS5600 1&2");  // write header at top of log file
   logfile.flush();
 }
 void dynamicStart() {  //W.I.P.
@@ -637,7 +650,10 @@ void parseLatLong(char* value, byte size) {//converts text lat, long to float, A
     latitude = sum;  //Converting integer to float
     if(pos_start[1] == 0){pos_start[1] = gps_to_xy(sum);}//Set starting latitude
     position[1] = gps_to_xy(sum);
+    logfile.print(micros());
+    logfile.print("|0|");
     logfile.print(String(latitude,10));
+    logfile.print('|');
     logfile.flush();
   }
   if (size == 11) {//Longitude
@@ -892,6 +908,19 @@ void readLSM() {  //Alleon Oxales
   LSM_MX = LSM_mag.magnetic.x;
   LSM_MY = LSM_mag.magnetic.y;
   LSM_MZ = LSM_mag.magnetic.z;
+  
+  logfile.print(micros());
+  logfile.print("|4|");
+  logfile.print(LSM_AX);logfile.print('|');
+  logfile.print(LSM_AY);logfile.print('|');
+  logfile.print(LSM_AZ);logfile.print('|');
+  logfile.print(LSM_GX);logfile.print('|');
+  logfile.print(LSM_GY);logfile.print('|');
+  logfile.print(LSM_GZ);logfile.print('|');
+  logfile.print(LSM_MX);logfile.print('|');
+  logfile.print(LSM_MY);logfile.print('|');
+  logfile.println(LSM_MZ);
+  logfile.flush();
   if (debug) {
     Serial.print("ACC:");
     Serial.print(LSM_acc.acceleration.x, 2);
@@ -927,6 +956,13 @@ void readADXL() {
   ADXL345_AX = event.acceleration.x;
   ADXL345_AY = event.acceleration.y;
   ADXL345_AZ = event.acceleration.z;
+
+  logfile.print(micros());
+  logfile.print("|5|");
+  logfile.print(ADXL345_AX);logfile.print('|');
+  logfile.print(ADXL345_AY);logfile.print('|');
+  logfile.println(ADXL345_AZ);
+  logfile.flush();
 }  //end readADXL
 int readRawAngle(TwoWire* wire) {  //Ryan Santiago
   wire->beginTransmission(AS5600_ADDR);

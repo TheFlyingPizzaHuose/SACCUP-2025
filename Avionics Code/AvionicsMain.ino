@@ -158,15 +158,15 @@ const int PRGM_ERR = 0,
           LSM9SD1_FAIL = 28;
 
 //Component cycle time micros
-uint BMP280_RATE = 37500,  //Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5, Ultra High: 37.5
+uint BMP280_RATE = 5500,  //Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5, Ultra High: 37.5
   SAMM8Q_RATE = 100000,
-     MPU6050_RATE = 9,
-     BMP180_RATE = 17000,  //Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
-  AS5600_RATE = 5000,
+     MPU6050_RATE = 125,
+     BMP180_RATE = 4500,  //Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
+  AS5600_RATE = 150,
      RFD_RATE = 50000,
      RFM_RATE = 50000,
-     LSM_RATE = 40000,
-     ADXL345_RATE = 40000;
+     LSM_RATE = 1500,
+     ADXL345_RATE = 350;
 
 //Component last cycle time micros
 uint BMP280_LAST = 0,
@@ -232,6 +232,7 @@ float position[3] = { 0, 0, 0 },  //Absolute position measurements
   abs_rot[4] = { 1, 0, 0, 0 },  //Absolute rotation measurements
   dt_rot[3] = { 0, 0, 0 },   //Derivatie rotation measurements
   d2_rot[3] = { 0, 0, 0 };   //2nd Derivative rotation measurements
+
 void setup() {
   Serial.begin(57600);    // Start hardware serial communication (for debugging)
   rfSerial.begin(57600);  //Init RFD UART
@@ -266,8 +267,13 @@ void setup() {
   } else {
     setErr(MAIN_PWR_FAULT);
   }
+  //Serial.print("Test");
+  gpsChecksum(poll_interfere, sizeof(poll_interfere));
 }
 
+byte last_gps_byte = 0;
+bool record_bool = 0;
+int record_count = 0;
 void loop() {
   if (shutdownCheck[0] == 0xff && shutdownCheck[1] == 0xff && shutdownCheck[2] == 0xff) {  //Shutdown Mode
     digitalWrite(shutdown_pin, HIGH);
@@ -286,9 +292,28 @@ void loop() {
 
     static char gps_msg[200] = {};
     static int gps_msg_index = 0;
-    if (gpsSerial.available() > 0) {  //Print gps messages
+    if (gpsSerial.available() > 0) {  //Read gps messages
       char incomingByte = gpsSerial.read();
-      //Serial.print(incomingByte);
+
+      //Print UBX messages
+      if(record_bool){
+        Serial.print(record_count-2);
+        Serial.print(", ");
+        Serial.print(incomingByte, HEX);
+        Serial.print(", ");
+        for(int i = 7; i >=  0; i-){
+          Serial.print((incomingByte >> i) & 1);
+        }Serial.println();
+      }
+      record_count+=record_bool;
+      if(incomingByte == 0x62 && last_gps_byte == 0xB5){
+        record_bool = 1;
+      }
+      if(incomingByte == '$'){
+        record_bool = 0;
+        record_count = 0;
+      }
+      last_gps_byte = incomingByte;
       gps_msg[gps_msg_index] = incomingByte;
       gps_msg_index++;
       if (incomingByte == '\n') {
@@ -322,12 +347,13 @@ void loop() {
     }
     if (micros() - BMP180_LAST > BMP180_RATE) {
       BMP180_1_PRESS = bmp2.readPressure();
-      //Serial.println(BMP180_1_PRESS);
       position[2] = BMP180_1_PRESS;
       BMP180_2_PRESS = bmp3.readPressure();
       BMP180_LAST = micros();
     }
-
+    if (micros() - MPU6050_LAST > MPU6050_RATE) {
+      MPU6050_LAST = micros();
+    }
     if (micros() - LSM_LAST > LSM_RATE && !errorCodes[LSM9SD1_FAIL]) {
       readLSM();
       LSM_LAST = micros();
@@ -417,14 +443,14 @@ bool initSAM_M8Q() {
   byte set4_1[] = { 0xB5, 0x62, 0x06, 0x17, 0x14, 0x00, 0x00, 0x41, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0x57 };
 
   //Generate the configuration string for interference resistance settings
-  byte setJam[] = { 0xB5, 0x62, 0x06, 0x39, 0x08, 0x00, 0xF3, 0xAC, 0x62, 0xAD, 0x1E, 0x43, 0x00, 0x00, 0x56, 0x45 };
+  byte setJam[] = { 0xB5, 0x62, 0x06, 0x39, 0x08, 0x00, 0xF3, 0xAC, 0x62, 0xAD, 0x1E, 0x63, 0x00, 0x00, 0x76, 0xA5};
 
   //For M8 series gps, just add Galileo, from https://portal.u-blox.com/s/question/0D52p00008HKEEYCA5/ublox-gps-galileo-enabling-for-ubx-m8
   byte setSat[] = { 0xB5, 0x62, 0x06, 0x3E, 0x0C, 0x00, 0x00, 0x00, 0x20, 0x01, 0x02, 0x04, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x82, 0x56 };
 
   Serial.print("Deactivating GSA Messages... ");
   if (gpsSet(setGSA, sizeof(setGSA)) == 3) {
-    gpsReady = 0;
+    gpsReady = 0; 
     Serial.println("NMEA GSA Message Deactivation Failed!");
   }
   Serial.print("Setting Nav Mode... ");
@@ -494,15 +520,16 @@ int gpsSet(byte* msg, byte size) {
 }  //end gpsSet
 void gpsChecksum(byte* checksumPayload, byte payloadSize) {
   byte CK_A = 0, CK_B = 0;
-  for (int i = 0; i < payloadSize; i++) {
-    CK_A = CK_A + *checksumPayload;
-    CK_B = CK_B + CK_A;
-    checksumPayload++;
+  for (int i = 2; i < payloadSize; i++) {
+    if(i == payloadSize-2){
+      *(checksumPayload+i) = CK_A;
+      *(checksumPayload+i+1) = CK_B;
+      break;
+    }else{
+      CK_A = CK_A + *(checksumPayload+i);
+      CK_B = CK_B + CK_A;
+    }
   }
-
-  *checksumPayload = CK_A;
-  checksumPayload++;
-  *checksumPayload = CK_B;
 }  //end gpsChecksum
 void sendUBX(byte* UBXmsg, byte msgLength) {
   for (int i = 0; i < msgLength; i++) {
@@ -666,7 +693,7 @@ void sendRFM() {
   }
 }
 char* readyPacket() {  //Leiana Mendoza -      
-Combines telemetry into bit array then convert to char array
+  //Combines telemetry into bit array then convert to char array
   int bitArray[bitArrayLength] = {};
   static char charArray[charArrayLegnth]{};  //+1 to include checksum byte, static so that the mem alloc is retained throughout the program
   int bitIndex = 0;
@@ -854,6 +881,65 @@ void setupLSM() {  //Ryan Santiago
   //lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_500DPS);
   //lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_2000DPS);
 }  //end setupLSM
+void setupMPU6050(){
+  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+  Serial.print("Accelerometer range set to: ");
+  switch (mpu.getAccelerometerRange()) {
+  case MPU6050_RANGE_2_G:
+    Serial.println("+-2G");
+    break;
+  case MPU6050_RANGE_4_G:
+    Serial.println("+-4G");
+    break;
+  case MPU6050_RANGE_8_G:
+    Serial.println("+-8G");
+    break;
+  case MPU6050_RANGE_16_G:
+    Serial.println("+-16G");
+    break;
+  }
+  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+  Serial.print("Gyro range set to: ");
+  switch (mpu.getGyroRange()) {
+  case MPU6050_RANGE_250_DEG:
+    Serial.println("+- 250 deg/s");
+    break;
+  case MPU6050_RANGE_500_DEG:
+    Serial.println("+- 500 deg/s");
+    break;
+  case MPU6050_RANGE_1000_DEG:
+    Serial.println("+- 1000 deg/s");
+    break;
+  case MPU6050_RANGE_2000_DEG:
+    Serial.println("+- 2000 deg/s");
+    break;
+  }
+
+  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+  Serial.print("Filter bandwidth set to: ");
+  switch (mpu.getFilterBandwidth()) {
+  case MPU6050_BAND_260_HZ:
+    Serial.println("260 Hz");
+    break;
+  case MPU6050_BAND_184_HZ:
+    Serial.println("184 Hz");
+    break;
+  case MPU6050_BAND_94_HZ:
+    Serial.println("94 Hz");
+    break;
+  case MPU6050_BAND_44_HZ:
+    Serial.println("44 Hz");
+    break;
+  case MPU6050_BAND_21_HZ:
+    Serial.println("21 Hz");
+    break;
+  case MPU6050_BAND_10_HZ:
+    Serial.println("10 Hz");
+    break;
+  case MPU6050_BAND_5_HZ:
+    Serial.println("5 Hz");
+    break;
+}
 void readLSM() {  //Alleon Oxales
   //Read sensor data
   lsm.read();
@@ -986,6 +1072,7 @@ void commands(char command) {  //Alleon Oxales
       }
       break;
     case 0x06:
+      //sendUBX(poll_interfere, sizeof(poll_interfere));
       break;
     case 0x07:
       break;

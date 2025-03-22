@@ -267,8 +267,7 @@ void setup() {
   } else {
     setErr(MAIN_PWR_FAULT);
   }
-  //Serial.print("Test");
-  gpsChecksum(poll_interfere, sizeof(poll_interfere));
+  //gpsChecksum(poll_interfere, sizeof(poll_interfere));
 }
 
 byte last_gps_byte = 0;
@@ -301,7 +300,7 @@ void loop() {
         Serial.print(", ");
         Serial.print(incomingByte, HEX);
         Serial.print(", ");
-        for(int i = 7; i >=  0; i-){
+        for(int i = 7; i >= 0; i--){
           Serial.print((incomingByte >> i) & 1);
         }Serial.println();
       }
@@ -352,6 +351,7 @@ void loop() {
       BMP180_LAST = micros();
     }
     if (micros() - MPU6050_LAST > MPU6050_RATE) {
+      //readMPU6050();
       MPU6050_LAST = micros();
     }
     if (micros() - LSM_LAST > LSM_RATE && !errorCodes[LSM9SD1_FAIL]) {

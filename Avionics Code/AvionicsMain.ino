@@ -893,6 +893,7 @@ void setupMPU6050(){
   mpu.setAccelerometerRange(MPU6050_RANGE_8_G);//Options: 2/4/8/16
   mpu.setGyroRange(MPU6050_RANGE_500_DEG);//Options 250/500/1000/2000
   mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);//Options 260/184/94/44/21/10/5
+  mpu.setSampleDivisor(0); // Divides Gyro output rate by (Sample divisor + 1) to get sample rate
 }
 void readLSM() {  //Alleon Oxales
   //Read sensor data

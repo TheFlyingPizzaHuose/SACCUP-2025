@@ -895,6 +895,29 @@ void setupMPU6050(){
   mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);//Options 260/184/94/44/21/10/5
   mpu.setSampleDivisor(0); // Divides Gyro output rate by (Sample divisor + 1) to get sample rate
 }
+
+void readMPU6050(){    //Elizabeth McGhee
+  sensor_event_t a, g, temp;
+  mpu.get_event(&a, &g, &temp);
+
+  MPU_AX = a.acceleration.x;
+  MPU_AY = a.acceleration.y;
+  MPU_AZ = a.acceleration.z;
+  MPU_GX = g.gyro.x;
+  MPU_GY = g.gyro.y;
+  MPU_GZ = g.gyro.z;
+
+  logfile.print(micros());
+  logfile.print("|3|");
+  logfile.print(MPU_AX);logfile.print('|');
+  logfile.print(MPU_AY);logfile.print('|');
+  logfile.print(MPU_AZ);logfile.print('|');
+  logfile.print(MPU_GX);logfile.print('|');
+  logfile.print(MPU_GY);logfile.print('|');
+  logfile.print(MPU_GZ);logfile.print('|');
+  logfile.flush();
+  
+}
 void readLSM() {  //Alleon Oxales
   //Read sensor data
   lsm.read();

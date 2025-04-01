@@ -954,26 +954,31 @@ int* uint_to_binary(char character) { //Leiana Mendoza
 }  //end uint_to_binary
 //==============================
 
-// Event Detection ============================================ Elizabeth McGhee WIP
+// Event Detection ============================================ Elizabeth McGhee
 void event_detection() {
-  altitude = 44330 * (1 - pow(BMP280_PRESS/101.325, 1/5.255)); // Formula found online https://docs.arduino.cc/tutorials/nano-33-ble-sense/barometric-sensor/
+  altitude = 44330 * (1 - pow(BMP280_PRESS/101.325, 1/5.255)); 
   float dummy_variable = 0.3;  //We don't know this yet
   float g = 9.81;
+
+  // Booleam Values
+  bool liftoff = altitude > 50.0 && LSM_AZ > 2*g && ADLXL345_AZ > 2*g && MPU_AZ > 2*g
+  bool burnout = altitude > dummy_variable && LSM_AZ < g && ADLXL345_AZ < g && MPU_AZ < g
+  bool apogee = LSM_GX < 0 && LSM_GY < 0 && LSM_GZ < 0 && MPU_GX < 0 && MPU_GY < 0 && MPU_GZ < 0
+  bool landed = altitude < 50.0
+
+
   // The index is in the following ascending order: liftoff, burnout, apogee, drogue deploy, main deplot, landed
-  // Liftoff =================================================
-  if (altitude > 50.0 && LSM_AZ > 2*g && ADLXL345_AZ > 2*g && MPU_AZ > 2*g) {
+  if (liftoff) {
     my_event_arr[0] = 1;
   } else {
     my_event_arr[0] = 0;
   }
-  // Burnout =================================================
-  if (altitude > dummy_variable && LSM_AZ < g && ADLXL345_AZ < g && MPU_AZ < g) {
+  if (burnout) {
     my_event_arr[1] = 1;
   } else {
     my_event_arr[1] = 0;
   }
-  // Apogee ==================================================
-  if (velocity[2] < 0) {
+  if (apogee) {
     my_event_arr[2] = 1;
   } else {
     my_event_arr[2] = 0;
@@ -983,7 +988,7 @@ void event_detection() {
   // Main Deploy =============================================
       // Not sure parameters yet
   // Landed ==================================================
-  if (altitude < 50.0) {
+  if (landed) {
     my_event_arr[5] = 1;
   } else {
     my_event_arr[5] = 0;

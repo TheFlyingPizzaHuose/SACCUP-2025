@@ -15,7 +15,7 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 #include <Wire.h>              // I2C library
 #include <SPI.h>               // SPI library
 #include <SD.h>                // SD card library
-#include <Adafruit_BMP085.h>   // BMP 085 or 180 pressure sensor library
+#include "Adafruit_BMP085.h"   // BMP 085 or 180 pressure sensor library
 #include <Adafruit_BMP280.h>   // BMP 280 pressure sensor library
 #include <Adafruit_MPU6050.h>  // MPU6050 accelerometer sensor library
 #include <Adafruit_Sensor.h>   // Adafruit unified sensor library
@@ -104,7 +104,6 @@ int gpsVersion = 2;  //SAM-M8Q
 
 // AV Modes
 bool lowPower = 0;
-bool lowDataTransfer = 1;            //Default is 1
 int shutdownCheck[3] = {0, 0, 0};  //All three elements must be >0 to activate shutdown
 int restartCheck[3] = {0, 0, 0}; //All three elements must be >0 to activate restart
 int time_last_command = 0;
@@ -113,15 +112,15 @@ int bitLengthList[10] = {
   12,  //Seconds since launch
   1,   //Sender Ident
   12,  //Altitude
-  12,  //PositionY
-  12,  //PositionX
+  32,  //Latitude
+  32,  //Longitude
   9,   //Velocity
   8,   //OrientationX
   8,   //OrientationY
   32,  //Error Code Array
   6    //Even bit Array
 };     //Represents the number of bits for each part of the data transmission excluding checksum and endchar
-const int bitArrayLength = 112;
+const int bitArrayLength = 152;
 const int charArrayLegnth = bitArrayLength / 8 + 3;
 int my_event_arr[6] = {};
 int errorCodes[32] = {};  //Check document for error code list
@@ -159,14 +158,16 @@ const int PRGM_ERR = 0,
 
 //Component cycle time micros
 uint BMP280_RATE = 5500,  //Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5, Ultra High: 37.5
-  SAMM8Q_RATE = 100000,
+     SAMM8Q_RATE = 100000,
      MPU6050_RATE = 125,
-     BMP180_RATE = 4500,  //Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
-  AS5600_RATE = 150,
-     RFD_RATE = 50000,
+     BMP180_RATE = 5500,  //Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
+     AS5600_RATE = 150,
+     RFD_RATE = 125,
      RFM_RATE = 50000,
      LSM_RATE = 1500,
-     ADXL345_RATE = 350;
+     ADXL345_RATE = 350,
+     SD_RATE = 10000,
+     DYN_START_RATE = 100000;
 
 //Component last cycle time micros
 uint BMP280_LAST = 0,
@@ -177,7 +178,9 @@ uint BMP280_LAST = 0,
      RFD_LAST = 0,
      RFM_LAST = 0,
      LSM_LAST = 0,
-     ADXL345_LAST = 0;
+     ADXL345_LAST = 0,
+     SD_LAST = 0,
+     DYN_START_LAST = 0;
 
 //Time variables
 uint time_launch = 0;
@@ -264,8 +267,15 @@ void setup() {
   if (!SD.begin(sdSelect)) { setErr(SD_FAIL); }  //Init SD, this comes first to be able to check the latest log file
   if (detect_good_shutdown()) {
     normalStart();
-  } else {
+  } else {//Sets all errors to start the dynamic start process.
     setErr(MAIN_PWR_FAULT);
+    setErr(BMP280_FAIL);
+    setErr(SAMM8Q_FAIL);
+    setErr(MPU6050_FAIL);
+    setErr(BMP180_1_FAIL);
+    setErr(BMP180_2_FAIL);
+    setErr(ADXL375_FAIL);
+    setErr(LSM9SD1_FAIL);
   }
   //gpsChecksum(poll_interfere, sizeof(poll_interfere));
 }
@@ -273,10 +283,11 @@ void setup() {
 byte last_gps_byte = 0;
 bool record_bool = 0;
 int record_count = 0;
+int temp = 0;
 void loop() {
   if (shutdownCheck[0] == 0xff && shutdownCheck[1] == 0xff && shutdownCheck[2] == 0xff) {  //Shutdown Mode
     digitalWrite(shutdown_pin, HIGH);
-  } else if (!errorCodes[MAIN_PWR_FAULT] && !lowPower) {  //Normal Mode
+  } else if (!errorCodes[MAIN_PWR_FAULT]) {  //Normal Mode
     if (micros() < last_micros) {                         //Clock rollover check
       BMP280_LAST = 0;
       SAMM8Q_LAST = 0;
@@ -284,112 +295,113 @@ void loop() {
       BMP180_LAST = 0;
       AS5600_LAST = 0;
       LSM_LAST = 0;
+      SD_LAST = 0;
     }
     digitalWrite(lowpower_pin, HIGH);
 
     readRFD();
-
-    static char gps_msg[200] = {};
-    static int gps_msg_index = 0;
-    if (gpsSerial.available() > 0) {  //Read gps messages
-      char incomingByte = gpsSerial.read();
-
-      //Print UBX messages
-      if(record_bool){
-        Serial.print(record_count-2);
-        Serial.print(", ");
-        Serial.print(incomingByte, HEX);
-        Serial.print(", ");
-        for(int i = 7; i >= 0; i--){
-          Serial.print((incomingByte >> i) & 1);
-        }Serial.println();
-      }
-      record_count+=record_bool;
-      if(incomingByte == 0x62 && last_gps_byte == 0xB5){
-        record_bool = 1;
-      }
-      if(incomingByte == '$'){
-        record_bool = 0;
-        record_count = 0;
-      }
-      last_gps_byte = incomingByte;
-      gps_msg[gps_msg_index] = incomingByte;
-      gps_msg_index++;
-      if (incomingByte == '\n') {
-        readGPS(gps_msg, gps_msg_index);
-        gps_msg_index = 0;
-      }
-    }
-
     //At each sample, this also checks if the sensor has failed.
     time_since_launch = micros() / 1000000 - time_launch;
-    if (micros() - AS5600_LAST > AS5600_RATE) {
-      AS5600_1_ANG = readRawAngle(&Wire);
-      AS5600_2_ANG = readRawAngle(&Wire1);
-      if (AS5600_1_ANG < 0) {
-        setErr(AS5600_1_FAIL);
-      } else {
-        clearErr(AS5600_2_FAIL);
+    static char gps_msg[200] = {};
+    static int gps_msg_index = 0;
+    if(gpsSerial.available() > 0){
+      //temp = micros();
+      int read_num = gpsSerial.available();
+      for(int i = 0; i < read_num; i++){
+        char incomingByte = gpsSerial.read();
+        gps_msg[gps_msg_index] = incomingByte;
+        //Serial.print(incomingByte);
+        gps_msg_index++;
+        if (incomingByte == '\n') {
+          parseGPS(gps_msg, gps_msg_index);
+          gps_msg_index = 0;
+        }
+        if(gps_msg_index > 190){gps_msg_index = 0;}//Prevent buffer overflow 
       }
-      if (AS5600_2_ANG < 0) {
-        setErr(AS5600_2_FAIL);
-      } else {
-        clearErr(AS5600_2_FAIL);
+      //Serial.println(micros() - temp);
+    }else{
+      if (micros() - AS5600_LAST > AS5600_RATE) {
+        AS5600_1_ANG = readRawAngle(&Wire);
+        AS5600_2_ANG = readRawAngle(&Wire1);
+        if (AS5600_1_ANG < 0) {
+          setErr(AS5600_1_FAIL);
+        } else {
+          clearErr(AS5600_2_FAIL);
+        }
+        if (AS5600_2_ANG < 0) {
+          setErr(AS5600_2_FAIL);
+        } else {
+          clearErr(AS5600_2_FAIL);
+        }
+        AS5600_LAST = micros();
+        if(!errorCodes[SD_FAIL]){
+          logfile.print(micros());
+          logfile.print("|6|");
+          logfile.print(AS5600_1_ANG);
+          logfile.print('|');
+          logfile.println(AS5600_2_ANG);
+        }
       }
-      AS5600_LAST = micros();
-      logfile.print(micros());
-      logfile.print("|6|");
-      logfile.print(AS5600_1_ANG);
-      logfile.print('|');
-      logfile.println(AS5600_2_ANG);
-      logfile.flush();
+      if (micros() - BMP280_LAST > BMP280_RATE && !errorCodes[BMP280_FAIL]) {
+        BMP280_PRESS = bmp1.readPressure();
+        BMP280_LAST = micros();
+        if(!errorCodes[SD_FAIL]){
+          logfile.print(micros());
+          logfile.print("|1|");
+          logfile.println(BMP280_PRESS);
+        }
+      }
+      if (micros() - BMP180_LAST > BMP180_RATE) {
+        if(!errorCodes[BMP180_1_FAIL]){
+          BMP180_1_PRESS = bmp2.readPressure();
+          bmp2.readCommand();
+        }
+        if(!errorCodes[BMP180_2_FAIL]){
+          BMP180_2_PRESS = bmp3.readPressure();
+          bmp3.readCommand();
+        }
+        position[2] = BMP180_2_PRESS;
+        BMP180_LAST = micros();
+        if(!errorCodes[SD_FAIL]){
+          logfile.print(micros());
+          logfile.print("|2|");
+          logfile.print(BMP180_1_PRESS);
+          logfile.print('|');
+          logfile.println(BMP180_2_PRESS);
+        }
+      }
+      if (micros() - MPU6050_LAST > MPU6050_RATE && !errorCodes[MPU6050_FAIL]) {
+        readMPU6050();
+        MPU6050_LAST = micros();
+      }
+      if (micros() - LSM_LAST > LSM_RATE && !errorCodes[LSM9SD1_FAIL]) {
+        readLSM();
+        LSM_LAST = micros();
+      }
+      if (micros() - ADXL345_LAST > ADXL345_RATE && !errorCodes[ADXL375_FAIL]) {
+        readADXL();
+        ADXL345_LAST = micros();
+      }
+      if (micros() - SD_LAST> SD_RATE){
+        logfile.flush();
+      }
     }
-    if (micros() - BMP280_LAST > BMP280_RATE) {
-      BMP280_PRESS = bmp1.readPressure();
-      BMP280_LAST = micros();
-      logfile.print(micros());
-      logfile.print("|1|");
-      logfile.println(BMP280_PRESS);
-      logfile.flush();
-    }
-    if (micros() - BMP180_LAST > BMP180_RATE) {
-      BMP180_1_PRESS = bmp2.readPressure();
-      position[2] = BMP180_1_PRESS;
-      BMP180_2_PRESS = bmp3.readPressure();
-      BMP180_LAST = micros();
-      logfile.print(micros());
-      logfile.print("|2|");
-      logfile.print(BMP180_1_PRESS);
-      logfile.print('|');
-      logfile.println(BMP180_2_PRESS);
-      logfile.flush();
-    }
-    if (micros() - MPU6050_LAST > MPU6050_RATE) {
-      //readMPU6050();
-      MPU6050_LAST = micros();
-    }
-    if (micros() - LSM_LAST > LSM_RATE && !errorCodes[LSM9SD1_FAIL]) {
-      readLSM();
-      LSM_LAST = micros();
-    }
-    if (micros() - ADXL345_LAST > ADXL345_RATE && !errorCodes[ADXL375_FAIL]) {
-      readADXL();
-      ADXL345_LAST = micros();
-    }
-    if (lowDataTransfer) {
-      sendRFD();
-      sendRFM();
-      if (debug) { Serial.print("||||"); }
-      //Serial.println(epoch());
-    }
-  } else if (lowPower) {  //Low Power Mode
-    digitalWrite(lowpower_pin, LOW);
-    readRFD();
+    sendRFD();
+    sendRFM();
   } else {  //Recovery Mode
     dynamicStart();
     readRFD();
     sendRFD();
     sendRFM();
+  }
+  if (lowPower) {  //Low Power Mode
+    RFD_RATE = 1000000;
+    sendRFD();
+    sendRFM();
+    digitalWrite(lowpower_pin, LOW);
+    readRFD();
+  }else{  
+    RFD_RATE = 125;
   }
 }
 
@@ -397,15 +409,14 @@ void loop() {
 void normalStart() {
   Serial.println("NORM_START");
 
-  //Initialize sensor ____ and set error if it fails
+  //Initialize sensors and set error if it fails
   if (!initSAM_M8Q()) { setErr(SAMM8Q_FAIL); }
-  if (!mpu.begin(104, &Wire1)) { setErr(MPU6050_FAIL); }
-  if (!lsm.begin()) { setErr(LSM9SD1_FAIL); }
-  setupLSM();  //Setups LSM range of measurement
+  if (!mpu.begin(104, &Wire1)) { setErr(MPU6050_FAIL); } else{setupMPU6050();}  //Setups MPU range of measurement and measurement rate
+  if (!lsm.begin()) { setErr(LSM9SD1_FAIL); } else{setupLSM();}  //Setups LSM range of measurement and measurement rate
   if (!bmp1.begin()) { setErr(BMP280_FAIL); }  
-  if (!bmp2.begin(3, &Wire2) /*0: low power, 1: normal, 2: high res, 3: ultra high*/) { setErr(BMP180_1_FAIL); }
+  if (!bmp2.begin(0, &Wire2) /*0: low power, 1: normal, 2: high res, 3: ultra high*/) { setErr(BMP180_1_FAIL); }
+  if (!bmp3.begin(0, &Wire1) /*0: low power, 1: normal, 2: high res, 3: ultra high*/) { setErr(BMP180_2_FAIL); }
   if (!adxl.begin()) { setErr(ADXL375_FAIL); }
-  if (!bmp3.begin(3, &Wire1) /*0: low power, 1: normal, 2: high res, 3: ultra high*/) { setErr(BMP180_2_FAIL); }
   //adxl.setRange(ADXL345_RANGE_16_G);
 
   logfile = SD.open(checkFile(), FILE_WRITE);  //Opens new file with highest index
@@ -419,15 +430,133 @@ void normalStart() {
   logfile.println("Data IDs, 0: GPS, 1: BMP280, 2: BMP180 1&2, 3: MPU6050, 4: LSM9DS1, 5: ADXL375, 6: AS5600 1&2");  // write header at top of log file
   logfile.flush();
 }
-void dynamicStart() {  //W.I.P.
+//Generate the configuration string for Factory Default Settings
+byte setDefaults[] = { 0xB5, 0x62, 0x06, 0x09, 0x0D, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x17, 0x2F, 0xAE };
+
+//10Hz Max data rate for SAM-M8Q
+//byte setDataRate[] = { 0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0xFA, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x96 };
+//setDataRate[6] = 0x64;
+//setDataRate[12] = 0x7A;
+//setDataRate[13] = 0x12;
+byte setDataRate[] = { 0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x64, 0x00, 0x01, 0x00, 0x01, 0x00, 0x7A, 0x12 };
+
+//Faster 38400 Baud Rate for the higher update rates
+byte setBaudRate[] = { 0xB5, 0x62, 0x06, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0xD0, 0x08, 0x00, 0x00, 0x00, 0x96, 0x00, 0x00, 0x23, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAF, 0x70 };
+
+//Generate the configuration string for Navigation Mode
+byte setNav[] = { 0xB5, 0x62, 0x06, 0x24, 0x24, 0x00, 0xFF, 0xFF, 0x08, 0x03, 0x00, 0x00, 0x00, 0x00, 0x10, 0x27, 0x00, 0x00, 0x05, 0x00, 0xFA, 0x00, 0xFA, 0x00, 0x64, 0x00, 0x2C, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10, 0x27, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4F, 0x1F };
+
+//Generate the configuration string for NMEA messages
+byte setGLL[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x2B };
+byte setGSA[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x31 };
+byte setGSV[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x39 };
+byte setVTG[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x46 };
+byte setGGA[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x23 };
+byte set4_1[] = { 0xB5, 0x62, 0x06, 0x17, 0x14, 0x00, 0x00, 0x41, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0x57 };
+
+//Generate the configuration string for interference resistance settings
+byte setJam[] = { 0xB5, 0x62, 0x06, 0x39, 0x08, 0x00, 0xF3, 0xAC, 0x62, 0xAD, 0x1E, 0x43, 0x00, 0x00, 0x56, 0x45 };
+
+//For M8 series gps, just add Galileo, from https://portal.u-blox.com/s/question/0D52p00008HKEEYCA5/ublox-gps-galileo-enabling-for-ubx-m8
+byte setSat[] = { 0xB5, 0x62, 0x06, 0x3E, 0x0C, 0x00, 0x00, 0x00, 0x20, 0x01, 0x02, 0x04, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x82, 0x56 };
+
+int dynamicStartStep = 0;
+void dynamicStart() {  //Alleon Oxales, performs startup sequence steps every 100ms to prevent blocking of sensors in case of in-flight start.
+  if ((micros() - DYN_START_LAST > DYN_START_RATE)) {
+    Serial.println("DYNAMIC_START");
+    switch(dynamicStartStep){
+      case 0:
+        if (!bmp1.begin()) { setErr(BMP280_FAIL); }else{clearErr(BMP280_FAIL);}
+        if (!bmp2.begin(0, &Wire2)) { setErr(BMP180_1_FAIL); }else{clearErr(BMP180_1_FAIL);}
+        if (!bmp3.begin(0, &Wire1)) { setErr(BMP180_2_FAIL); }else{clearErr(BMP180_2_FAIL);}
+        break;
+      case 1:
+        gpsSerial.begin(38400);
+        sendUBX(setDefaults, sizeof(setDefaults));
+        break;
+      case 2:
+        gpsSerial.begin(9600);
+        sendUBX(setDefaults, sizeof(setDefaults));
+        break;
+      case 3:
+        sendUBX(setGSA, sizeof(setGSA));
+        break;
+      case 4:
+        sendUBX(setNav, sizeof(setNav));
+        break;
+      case 5:
+        sendUBX(setGSV, sizeof(setGSV));
+        break;
+      case 6:
+        sendUBX(setDataRate, sizeof(setDataRate));
+        break;
+      case 7:
+        sendUBX(set4_1, sizeof(set4_1));
+        break;
+      case 8:
+        sendUBX(setSat, sizeof(setSat));
+        break;
+      case 9:
+        sendUBX(setVTG, sizeof(setVTG));
+        break;
+      case 10:
+        sendUBX(setJam, sizeof(setJam));
+        break;
+      case 11:
+        sendUBX(setGLL, sizeof(setGLL));
+        break;
+      case 12:
+        sendUBX(setGGA, sizeof(setGGA));
+        break;
+      case 13:
+        sendUBX(setBaudRate, sizeof(setBaudRate));
+        gpsSerial.end();
+        gpsSerial.flush();
+        gpsSerial.begin(38400);
+        clearErr(SAMM8Q_FAIL);
+        break;
+      case 14: 
+        if (!mpu.begin(104, &Wire1)) { setErr(MPU6050_FAIL); } 
+        else{
+          setupMPU6050();
+          clearErr(MPU6050_FAIL);
+        }
+        break;
+      case 15:
+        if (!lsm.begin()) { setErr(LSM9SD1_FAIL); } 
+        else{
+          setupLSM();
+          clearErr(LSM9SD1_FAIL);
+        }
+        break;
+      case 16:
+        if (!adxl.begin()) { setErr(ADXL375_FAIL); }
+        else{
+          clearErr(ADXL375_FAIL);
+        }
+        break;
+      case 17:
+        logfile = SD.open(checkFile(), FILE_WRITE);  //Opens new file with highest index
+        long epochTime = epoch();
+        //Print epoch bytes to logfile
+        logfile.print((char)((epochTime >> 24) & 0xFF));
+        logfile.print((char)((epochTime >> 16) & 0xFF));
+        logfile.print((char)((epochTime >> 8) & 0xFF));
+        logfile.println((char)(epochTime & 0xFF));
+        logfile.println("TIME(us), Data ID, Data");  // write header at top of log file
+        logfile.println("Data IDs, 0: GPS, 1: BMP280, 2: BMP180 1&2, 3: MPU6050, 4: LSM9DS1, 5: ADXL375, 6: AS5600 1&2");  // write header at top of log file
+        logfile.flush();
+        clearErr(MAIN_PWR_FAULT);
+    }
+    DYN_START_LAST = micros();
+    dynamicStartStep++;
+  }
 }
 
 //==========GPS CODE==========//Based on SparkyVT https://github.com/SparkyVT/HPR-Rocket-Flight-Computer/blob/V4_7_0/Main%20Code/UBLOX_GNSS_Config.ino
 bool initSAM_M8Q() {
   bool gpsReady = 1;
-  //Generate the configuration string for Factory Default Settings
-  byte setDefaults[] = { 0xB5, 0x62, 0x06, 0x09, 0x0D, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x17, 0x2F, 0xAE };
-
+  
   gpsSerial.begin(38400);
   Serial.print("Set Defaults @ 38400 Baud... ");
   if (gpsSet(setDefaults, sizeof(setDefaults)) == 3) { Serial.println("Restore Defaults Failed!"); };
@@ -435,35 +564,9 @@ bool initSAM_M8Q() {
   Serial.print("Set Defaults @ 9600 Baud... ");
   if (gpsSet(setDefaults, sizeof(setDefaults)) == 3) { Serial.println("Restore Defaults Failed!"); };
 
-  //10Hz Max data rate for SAM-M8Q
-  byte setDataRate[] = { 0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0xFA, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x96 };
-  setDataRate[6] = 0x64;
-  setDataRate[12] = 0x7A;
-  setDataRate[13] = 0x12;
-
-  //Faster 38400 Baud Rate for the higher update rates
-  byte setBaudRate[] = { 0xB5, 0x62, 0x06, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0xD0, 0x08, 0x00, 0x00, 0x00, 0x96, 0x00, 0x00, 0x23, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAF, 0x70 };
-
-  //Generate the configuration string for Navigation Mode
-  byte setNav[] = { 0xB5, 0x62, 0x06, 0x24, 0x24, 0x00, 0xFF, 0xFF, 0x08, 0x03, 0x00, 0x00, 0x00, 0x00, 0x10, 0x27, 0x00, 0x00, 0x05, 0x00, 0xFA, 0x00, 0xFA, 0x00, 0x64, 0x00, 0x2C, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10, 0x27, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4F, 0x1F };
-
-  //Generate the configuration string for NMEA messages
-  byte setGLL[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x2B };
-  byte setGSA[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x31 };
-  byte setGSV[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x39 };
-  byte setVTG[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x46 };
-  byte setGGA[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x23 };
-  byte set4_1[] = { 0xB5, 0x62, 0x06, 0x17, 0x14, 0x00, 0x00, 0x41, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0x57 };
-
-  //Generate the configuration string for interference resistance settings
-  byte setJam[] = { 0xB5, 0x62, 0x06, 0x39, 0x08, 0x00, 0xF3, 0xAC, 0x62, 0xAD, 0x1E, 0x63, 0x00, 0x00, 0x76, 0xA5};
-
-  //For M8 series gps, just add Galileo, from https://portal.u-blox.com/s/question/0D52p00008HKEEYCA5/ublox-gps-galileo-enabling-for-ubx-m8
-  byte setSat[] = { 0xB5, 0x62, 0x06, 0x3E, 0x0C, 0x00, 0x00, 0x00, 0x20, 0x01, 0x02, 0x04, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x82, 0x56 };
-
   Serial.print("Deactivating GSA Messages... ");
   if (gpsSet(setGSA, sizeof(setGSA)) == 3) {
-    gpsReady = 0; 
+    gpsReady = 0;
     Serial.println("NMEA GSA Message Deactivation Failed!");
   }
   Serial.print("Setting Nav Mode... ");
@@ -596,7 +699,42 @@ byte getUBX_ACK(byte* msgID) {
     return 1;
   }
 }  //end getACK
-void readGPS(char* msg, byte size) {  //Alleon Oxales
+void readGPS(){
+  static char gps_msg[200] = {};
+  static int gps_msg_index = 0;
+  if (gpsSerial.available() > 0) {  //Read gps messages
+    char incomingByte = gpsSerial.read();
+
+    //Print UBX messages
+    /*if(record_bool){
+      Serial.print(record_count-2);
+      Serial.print(", ");
+      Serial.print(incomingByte, HEX);
+      Serial.print(", ");
+      for(int i = 7; i >= 0; i--){
+        Serial.print((incomingByte >> i) & 1);
+      }Serial.println();
+    }
+    record_count+=record_bool;
+    if(incomingByte == 0x62 && last_gps_byte == 0xB5){
+      record_bool = 1;
+    }
+    if(incomingByte == '$'){
+      record_bool = 0;
+      record_count = 0;
+    }
+    last_gps_byte = incomingByte;*/
+    gps_msg[gps_msg_index] = incomingByte;
+    Serial.print(incomingByte);
+    gps_msg_index++;
+    if (incomingByte == '\n') {
+      parseGPS(gps_msg, gps_msg_index);
+      gps_msg_index = 0;
+    }
+    if(gps_msg_index > 190){gps_msg_index = 0;}//Prevent buffer overflow
+  }
+}  //end readGPS
+void parseGPS(char* msg, byte size) {  //Alleon Oxales
   uint msg_index = 0;
   uint item_index = 0;
   uint item_length = 0;
@@ -633,7 +771,7 @@ void readGPS(char* msg, byte size) {  //Alleon Oxales
     }
   }
   if (debug) { Serial.print("||||"); }
-}  //end readGPS
+}  //end parseGPS
 void parseLatLong(char* value, byte size) {//converts text lat, long to float, Alleon Oxales
   float power = 10000;
   float sum = 0;
@@ -648,20 +786,18 @@ void parseLatLong(char* value, byte size) {//converts text lat, long to float, A
   }
   if (size == 10) {//Latitude
     latitude = sum;  //Converting integer to float
-    if(pos_start[1] == 0){pos_start[1] = gps_to_xy(sum);}//Set starting latitude
-    position[1] = gps_to_xy(sum);
+    if(pos_start[1] == 0){pos_start[1] = sum;}//Set starting latitude
+    position[1] = sum;
     logfile.print(micros());
     logfile.print("|0|");
     logfile.print(String(latitude,10));
     logfile.print('|');
-    logfile.flush();
   }
   if (size == 11) {//Longitude
     longitude = sum;  //Converting integer to float
-    if(pos_start[0] == 0){pos_start[0] = gps_to_xy(sum);}//Set starting latitude
-    position[0] = gps_to_xy(sum);
+    if(pos_start[0] == 0){pos_start[0] = sum;}//Set starting latitude
+    position[0] = sum;
     logfile.println(String(longitude,10));
-    logfile.flush();
   }
 }  //end parseLatLong
 float gps_to_xy(float coord){//Converts gps coordinates to meters north and east, Alleon Oxales WIP
@@ -693,7 +829,7 @@ void sendRFD() {
 }
 void sendRFM() {
   if ((micros() - RFM_LAST > RFM_RATE) && !errorCodes[RFM9X_FAIL]) {
-    char* massage = readyPacket();
+    uint8_t* massage = readyPacket();
     //itoa(packetnum++, radiopacket+13, 10);
     //Serial.print("Sending "); Serial.println(radiopacket);
     //radiopacket[19] = 0;
@@ -711,7 +847,7 @@ void sendRFM() {
 char* readyPacket() {  //Leiana Mendoza -      
   //Combines telemetry into bit array then convert to char array
   int bitArray[bitArrayLength] = {};
-  static char charArray[charArrayLegnth]{};  //+1 to include checksum byte, static so that the mem alloc is retained throughout the program
+  static char charArray[charArrayLegnth] = {};  //+1 to include checksum byte, static so that the mem alloc is retained throughout the program
   int bitIndex = 0;
   for (int i = 0; i < 10; i++) {
     int dataLength = bitLengthList[i];
@@ -723,13 +859,18 @@ char* readyPacket() {  //Leiana Mendoza -
       switch (i) {
         case 0: datum = time_since_launch; break;
         case 2: datum = position[2] - pos_start[2]; break;
-        case 3: datum = position[1] - pos_start[1]; break;
-        case 4: datum = position[0] - pos_start[0]; break;
+        case 3: datum = position[1]; break;
+        case 4: datum = position[0]; break;
         case 5: datum = sqrt(velocity[0] * velocity[0] + velocity[1] * velocity[1] + velocity[2] * velocity[2]); break;
         case 6: datum = 255; break;
         case 7: datum = 255; break;
       }
-      int* bitsPtr = dec_to_binary(datum, dataLength);
+      int* bitsPtr;
+      if(i == 3 || i == 4){//Handle Lat and Lon
+        bitsPtr = float_to_binary(datum);
+      }else{
+        bitsPtr = dec_to_binary(datum, dataLength);
+      }
       for (int x = 0; x < dataLength; x++) {
         //Serial.print(*(bitsPtr+dataLength-1-x));
         bitArray[bitIndex] = *(bitsPtr + dataLength - 1 - x);
@@ -764,7 +905,7 @@ char* readyPacket() {  //Leiana Mendoza -
 byte radioChecksum(int* radioMSG, byte msgLength) {
   return '_';
 }  //end radioChecksum
-int* dec_to_binary(float my_dec, int my_bit) {  //Ellie McGshee, Returns elements in reverse order
+int* dec_to_binary(float my_dec, int my_bit) {  //Ellie McGhee, Returns elements in reverse order
   int my_dec_int = static_cast<int>(round(my_dec));
   int my_rem;
   static int my_arr[32];
@@ -784,6 +925,16 @@ int* dec_to_binary(float my_dec, int my_bit) {  //Ellie McGshee, Returns element
   }
   return my_arr;
 }  //end dec_to_binary
+int* float_to_binary(float num) {//Aleon Oxales
+  static int bit_array[32] = {};
+  int *int_repr = reinterpret_cast<uint32_t *>(&num);
+
+  // Extract individual bits
+  for (int i = 31; i >= 0; i--) {
+    bit_array[i] = (*int_repr >> i) & 1;
+  }
+  return bit_array; 
+}
 //Binary to decimal (Elizabeth McGhee)
 float binary_to_dec(int my_bit_size, int* my_arr) {
   float my_sum = 0;
@@ -893,12 +1044,11 @@ void setupMPU6050(){
   mpu.setAccelerometerRange(MPU6050_RANGE_8_G);//Options: 2/4/8/16
   mpu.setGyroRange(MPU6050_RANGE_500_DEG);//Options 250/500/1000/2000
   mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);//Options 260/184/94/44/21/10/5
-  mpu.setSampleDivisor(0); // Divides Gyro output rate by (Sample divisor + 1) to get sample rate
+  mpu.setSampleRateDivisor(0); // Divides Gyro output rate by (Sample divisor + 1) to get sample rate
 }
-
 void readMPU6050(){    //Elizabeth McGhee
-  sensor_event_t a, g, temp;
-  mpu.get_event(&a, &g, &temp);
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
 
   MPU_AX = a.acceleration.x;
   MPU_AY = a.acceleration.y;
@@ -907,16 +1057,16 @@ void readMPU6050(){    //Elizabeth McGhee
   MPU_GY = g.gyro.y;
   MPU_GZ = g.gyro.z;
 
-  logfile.print(micros());
-  logfile.print("|3|");
-  logfile.print(MPU_AX);logfile.print('|');
-  logfile.print(MPU_AY);logfile.print('|');
-  logfile.print(MPU_AZ);logfile.print('|');
-  logfile.print(MPU_GX);logfile.print('|');
-  logfile.print(MPU_GY);logfile.print('|');
-  logfile.print(MPU_GZ);logfile.print('|');
-  logfile.flush();
-  
+  if(!errorCodes[SD_FAIL]){
+    logfile.print(micros());
+    logfile.print("|3|");
+    logfile.print(MPU_AX);logfile.print('|');
+    logfile.print(MPU_AY);logfile.print('|');
+    logfile.print(MPU_AZ);logfile.print('|');
+    logfile.print(MPU_GX);logfile.print('|');
+    logfile.print(MPU_GY);logfile.print('|');
+    logfile.print(MPU_GZ);logfile.print('|');
+  }
 }
 void readLSM() {  //Alleon Oxales
   //Read sensor data
@@ -933,18 +1083,19 @@ void readLSM() {  //Alleon Oxales
   LSM_MY = LSM_mag.magnetic.y;
   LSM_MZ = LSM_mag.magnetic.z;
   
-  logfile.print(micros());
-  logfile.print("|4|");
-  logfile.print(LSM_AX);logfile.print('|');
-  logfile.print(LSM_AY);logfile.print('|');
-  logfile.print(LSM_AZ);logfile.print('|');
-  logfile.print(LSM_GX);logfile.print('|');
-  logfile.print(LSM_GY);logfile.print('|');
-  logfile.print(LSM_GZ);logfile.print('|');
-  logfile.print(LSM_MX);logfile.print('|');
-  logfile.print(LSM_MY);logfile.print('|');
-  logfile.println(LSM_MZ);
-  logfile.flush();
+  if(!errorCodes[SD_FAIL]){
+    logfile.print(micros());
+    logfile.print("|4|");
+    logfile.print(LSM_AX);logfile.print('|');
+    logfile.print(LSM_AY);logfile.print('|');
+    logfile.print(LSM_AZ);logfile.print('|');
+    logfile.print(LSM_GX);logfile.print('|');
+    logfile.print(LSM_GY);logfile.print('|');
+    logfile.print(LSM_GZ);logfile.print('|');
+    logfile.print(LSM_MX);logfile.print('|');
+    logfile.print(LSM_MY);logfile.print('|');
+    logfile.println(LSM_MZ);
+  }
   if (debug) {
     Serial.print("ACC:");
     Serial.print(LSM_acc.acceleration.x, 2);
@@ -981,12 +1132,13 @@ void readADXL() {
   ADXL345_AY = event.acceleration.y;
   ADXL345_AZ = event.acceleration.z;
 
-  logfile.print(micros());
-  logfile.print("|5|");
-  logfile.print(ADXL345_AX);logfile.print('|');
-  logfile.print(ADXL345_AY);logfile.print('|');
-  logfile.println(ADXL345_AZ);
-  logfile.flush();
+  if(!errorCodes[SD_FAIL]){
+    logfile.print(micros());
+    logfile.print("|5|");
+    logfile.print(ADXL345_AX);logfile.print('|');
+    logfile.print(ADXL345_AY);logfile.print('|');
+    logfile.println(ADXL345_AZ);
+  }
 }  //end readADXL
 int readRawAngle(TwoWire* wire) {  //Ryan Santiago
   wire->beginTransmission(AS5600_ADDR);
@@ -1046,10 +1198,8 @@ void commands(char command) {  //Alleon Oxales
       lowPower = 0;
       break;
     case 0x03:
-      lowDataTransfer = 0;
       break;
     case 0x04:
-      lowDataTransfer = 1;
       break;
     case 0x05:
       for (int i = 0; i < 3; i++) {  //Set the latest shutdownCheck

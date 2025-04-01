@@ -956,17 +956,18 @@ int* uint_to_binary(char character) { //Leiana Mendoza
 
 // Event Detection ============================================ Elizabeth McGhee WIP
 void event_detection() {
+  altitude = 44330 * (1 - pow(BMP280_PRESS/101.325, 1/5.255)); // Formula found online https://docs.arduino.cc/tutorials/nano-33-ble-sense/barometric-sensor/
   float dummy_variable = 0.3;  //We don't know this yet
   float g = 9.81;
   // The index is in the following ascending order: liftoff, burnout, apogee, drogue deploy, main deplot, landed
   // Liftoff =================================================
-  if (position[2] > 50.0 and acc[2] > 2 * g) {
+  if (altitude > 50.0 && LSM_AZ > 2*g && ADLXL345_AZ > 2*g && MPU_AZ > 2*g) {
     my_event_arr[0] = 1;
   } else {
     my_event_arr[0] = 0;
   }
   // Burnout =================================================
-  if (position[2] > dummy_variable and acc[2] < g) {
+  if (altitude > dummy_variable && LSM_AZ < g && ADLXL345_AZ < g && MPU_AZ < g) {
     my_event_arr[1] = 1;
   } else {
     my_event_arr[1] = 0;
@@ -978,12 +979,14 @@ void event_detection() {
     my_event_arr[2] = 0;
   }
   // Drogue Deploy ===========================================
+      //Not sure parameters yet
   // Main Deploy =============================================
+      // Not sure parameters yet
   // Landed ==================================================
-  if (position[2] < 50.0) {
-    my_event_arr[3] = 1;
+  if (altitude < 50.0) {
+    my_event_arr[5] = 1;
   } else {
-    my_event_arr[3] = 0;
+    my_event_arr[5] = 0;
   }
 }
 bool detect_good_shutdown() {  //Alleon Oxales

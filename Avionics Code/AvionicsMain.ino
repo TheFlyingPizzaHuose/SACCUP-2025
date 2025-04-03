@@ -956,15 +956,16 @@ int* uint_to_binary(char character) { //Leiana Mendoza
 
 // Event Detection ============================================ Elizabeth McGhee
 void event_detection() {
-  altitude = 44330 * (1 - pow(BMP280_PRESS/101.325, 1/5.255)); 
+  // altitude = 44330 * (1 - pow(BMP280_PRESS/101.325, 1/5.255)); 
+  altitude = BMP280_PRESS
   float dummy_variable = 0.3;  //We don't know this yet
   float g = 9.81;
 
   // Booleam Values
-  bool liftoff = altitude > 50.0 && LSM_AZ > 2*g && ADLXL345_AZ > 2*g && MPU_AZ > 2*g
+  bool liftoff = altitude > 50.0 && LSM_AZ > 2*g && ADLXL345_AZ > 2*g && MPU_AZ > 2*g & vertical_speed > 20
   bool burnout = altitude > dummy_variable && LSM_AZ < g && ADLXL345_AZ < g && MPU_AZ < g
   bool apogee = LSM_GX < 0 && LSM_GY < 0 && LSM_GZ < 0 && MPU_GX < 0 && MPU_GY < 0 && MPU_GZ < 0
-  bool landed = altitude < 50.0
+  bool landed = altitude < 50.0 & vertical_speed < 0.1
 
 
   // The index is in the following ascending order: liftoff, burnout, apogee, drogue deploy, main deplot, landed

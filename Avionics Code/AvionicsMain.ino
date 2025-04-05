@@ -186,6 +186,7 @@ uint BMP280_LAST = 0,
 uint time_launch = 0;
 uint last_millis = 0;
 uint last_micros = 0;
+float prev_time = 0;
 float time_since_launch = 0;
 
 //Start Variables
@@ -200,6 +201,7 @@ float orientationX = 0,     //degrees
 
 //Sensor Data
 float BMP280_PRESS = 0,
+      BMP280_PRESS_PREV = 0,
       GPS_LAT = 0,
       GPS_LON = 0,
       MPU_AX = 0,
@@ -957,33 +959,53 @@ int* uint_to_binary(char character) { //Leiana Mendoza
 // Event Detection ============================================ Elizabeth McGhee WIP
 void event_detection() {
   float dummy_variable = 0.3;  //We don't know this yet
-  float g = 9.81;
+  float g = 9.81;  
+  float velocity = 0 
+  altitude = 44330 * (1 - pow(BMP280_PRESS/10.1325),(1/5.255)) //hPa
+  float dt = fabs(micros() - prev_time)
+  float dP = fabs(BMP280_PRESS_PREV - BMP280_PRESS)
+  velocity = dP / dt
+  BMP280_PRESS_PREV = BMP280_PRESS
+  prev_time = micros()
+
+
+  // boolean values for event detection
+  liftoff = altitude > 50.0 & MPU_AZ > 2 * g & LSM_AZ > 2 * g & velocity > 20 
+  burnout = altitude > dummy_variable & MPU_AZ < 1 * g & LSM_AZ < 1 * g
+  apogee = LSM_GX < 0 & LSM_GY < 0 & LSM_GZ < 0 & MPU_AX < 0 & MPU_AY < 0 & MPU_AZ < 0
+  drogue_deploy = LSM_AZ < dummy_variable & MPU_AZ < dummy_variable & velocity < dummy_variable
+  main_deploy = LSM_AZ < dummy_variable & MPU_AZ < dummy_variable 
+  landed = velocity < 5 & altitude < 50
+
   // The index is in the following ascending order: liftoff, burnout, apogee, drogue deploy, main deplot, landed
-  // Liftoff =================================================
-  if (position[2] > 50.0 and acc[2] > 2 * g) {
+  if (liftoff) {
     my_event_arr[0] = 1;
   } else {
     my_event_arr[0] = 0;
-  }
-  // Burnout =================================================
-  if (position[2] > dummy_variable and acc[2] < g) {
+  if (burnout) {
     my_event_arr[1] = 1;
   } else {
     my_event_arr[1] = 0;
   }
-  // Apogee ==================================================
-  if (velocity[2] < 0) {
+  if (apogee) {
     my_event_arr[2] = 1;
   } else {
     my_event_arr[2] = 0;
   }
-  // Drogue Deploy ===========================================
-  // Main Deploy =============================================
-  // Landed ==================================================
-  if (position[2] < 50.0) {
+  if (drogue_deploy) {
     my_event_arr[3] = 1;
   } else {
     my_event_arr[3] = 0;
+  }
+  if (main_deploy) {
+    my_event_arr[4] = 1;
+  } else {
+    my_event_arr[4] = 0;
+  }
+  if (landed) {
+    my_event_arr[5] = 1;
+  } else {
+    my_event_arr[5] = 0;
   }
 }
 bool detect_good_shutdown() {  //Alleon Oxales

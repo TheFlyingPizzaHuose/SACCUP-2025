@@ -27,11 +27,13 @@ const int RFM9X_PWR = 23;
 #define rfSerial Serial2
 bool radio_debug = false;
 
+#define espSerial Serial1
+
 int bitLengthList[13] = {12,//Seconds since launch
                         1, //Sender Ident
                         12, //Altitude
-                        12, //Latitude
-                        12, //Lonitude
+                        32, //Latitude
+                        32, //Lonitude
                         9, //Velocity
                         8, //OrientationX
                         8, //OrientationY
@@ -41,7 +43,7 @@ int bitLengthList[13] = {12,//Seconds since launch
                         8, //Letter R
                         8 //Letter L
                         };//Represents the number of bits for each part of the data transmission excluding checksum and endchar
-const int bitArrayLength = 136;
+const int bitArrayLength = 176;
 static int bitArray[bitArrayLength] = {};
 const int charArrayLegnth = bitArrayLength/8;
 
@@ -78,8 +80,9 @@ const int PRGM_ERR = 0,
     LSM9SD1_FAIL = 28;
 
 void setup() {
-  Serial.begin(115200); // Start serial communication at 57600 baud rate
+  Serial.begin(9600); // Start serial communication at 460800 baud rate
   rfSerial.begin(57600);
+  espSerial.begin(19200);
   Serial.println("Ground Station Ready!");
 
   uint32_t reset_reason = SRC_SRSR;  // Read reset status register
@@ -99,12 +102,28 @@ void setup() {
     rf95.setFrequency(RF95_FREQ);
     rf95.setTxPower(RFM9X_PWR, false);
   }
+
+  //RFD Config
+  delay(1000);
+  rfSerial.print("+++");
+  delay(1000);
+  rfSerial.print("AT&T=RSSI\n\r");
+  delay(1000);
+  rfSerial.print("ATO\n\r");
+  rfSerial.print("ATO\n\r");
 }
 
 char lastData = 0;
 int message_index = 0;
 int last_time = millis();
 int msg_recieved = false;
+
+//ESP Variables
+char last[3] = {0, 0, 0};
+char recorded[7] = {0,0,0,0,0,0,0};
+int record = 0;
+
+//int last_time_msg = 0;
 void loop() {
   static char charArray[17] = {};
   if (false && rf95.available()) {
@@ -115,7 +134,7 @@ void loop() {
     if (rf95.recv(buf, &len)) {
       Serial.print("||RFM||");
       msg_recieved = true;
-      for(int i = 0; i<17; i++){
+      for(int i = 0; i<23; i++){
         int* bins = uint_to_binary(buf[i]);
         for(int x = 0; x<8; x++){
           bitArray[i*8 + x] = *(bins+x);
@@ -137,13 +156,13 @@ void loop() {
   }
   if (rfSerial.available()) {
     char data = rfSerial.read(); // Read from software serial
-    Serial.print(data);
+    //Serial.print(data);
     charArray[message_index] = data;
     if(data == 'L' && lastData == 'R'){//Checks if end characters are present
-      if(message_index == 16){
+      if(message_index == 21){
         Serial.println("||RFD||");
         msg_recieved = true;
-        for(int i = 0; i<17; i++){
+        for(int i = 0; i<22; i++){
           int* bins = uint_to_binary(charArray[i]);
           for(int x = 0; x<8; x++){
             bitArray[i*8 + x] = *(bins+x);
@@ -157,8 +176,36 @@ void loop() {
     }
     lastData = data;
     last_time = millis();
+
+    //ESP Data
+    if(last[0] == 'I' && last[1] == ':' && last[2] == ' '){
+      record = 1;
+    }
+    last[0] = last[1];
+    last[1] = last[2];
+    last[2] = data;
+
+    if(record>0 && data == ' '){
+      for(int i = 8-record; i<7; i++){
+        espSerial.print(recorded[i]);
+      }
+      espSerial.println();
+      record = 0;
+    }
+    if(record > 0){
+      record++;
+    }
+    recorded[0] = recorded[1];
+    recorded[1] = recorded[2];
+    recorded[2] = recorded[3];
+    recorded[3] = recorded[4];
+    recorded[4] = recorded[5];
+    recorded[5] = recorded[6];
+    recorded[6] = data;
   }
   if(msg_recieved){
+    //Serial.println(micros()-last_time_msg);
+    //last_time_msg = micros();
     int bit_arr_read_pos = 0;
     static float telemetry[13] = {};
     for(int i = 0; i < 13; i++){//Ellie McGhee
@@ -171,19 +218,24 @@ void loop() {
         my_sum = pow(2, my_index) * bitArray[bit_arr_read_pos+x]+ my_sum;
         my_index++;
       }
-      telemetry[i] = my_sum;
+      if(i == 3 || i == 4){
+        uint32_t temp = (uint32_t)my_sum;
+        memcpy(&telemetry[i], &temp, sizeof(float));
+      }else{
+        telemetry[i] = my_sum;
+      }
       bit_arr_read_pos+=bitLengthList[i];
     }
     for(int i = 0; i < 13; i++){
       switch(i){
-        case 0: Serial.print("T+: "); Serial.print(telemetry[i]);break;
-        case 1: Serial.print(" ID: "); Serial.print(telemetry[i]);break;
-        case 2: Serial.print(" ALT: "); Serial.print(telemetry[i]);break;
+        case 0: Serial.print("T+: "); Serial.print((int)telemetry[i]);break;
+        case 1: Serial.print(" ID: "); Serial.print((int)telemetry[i]);break;
+        case 2: Serial.print(" ALT: "); Serial.print((int)telemetry[i]);break;
         case 3: Serial.print(" LAT: "); Serial.print(telemetry[i]);break;
         case 4: Serial.print(" LON: "); Serial.print(telemetry[i]);break;
-        case 5: Serial.print(" VEL: "); Serial.print(telemetry[i]);break;
-        case 6: Serial.print(" OREINT_X: "); Serial.print(telemetry[i]);break;
-        case 7: Serial.print(" OREINT_Y: "); Serial.print(telemetry[i]);break;
+        case 5: Serial.print(" VEL: "); Serial.print((int)telemetry[i]);break;
+        case 6: Serial.print(" OREINT_X: "); Serial.print((int)telemetry[i]);break;
+        case 7: Serial.print(" OREINT_Y: "); Serial.print((int)telemetry[i]);break;
         case 8://Deal with error Codes
           Serial.print("  ");
           printErr(); 
@@ -299,7 +351,7 @@ void printErr(){
       case SD_FAIL + 32: Serial.print("SD_FAIL  "); break;
       case RFD900_FAIL + 32: Serial.print("RFD900_FAIL  "); break;
       case RFM9X_FAIL + 32: Serial.print("RFM9X_FAIL  "); break;
-      case ADXL345_FAIL + 32: Serial.print("ADXL345_FAIL  "); break;
+      case ADXL345_FAIL + 32: Serial.print("ADXL375_FAIL  "); break;
       case LSM9SD1_FAIL + 32: Serial.print("LSM9SD1_FAIL  "); break;
     }
   }

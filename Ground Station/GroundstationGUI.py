@@ -7,15 +7,17 @@ import cv2
 import threading
 import time
 import serial
+from PyQt5.QtGui import QKeyEvent
 from PyQt5.QtWidgets import (
     QApplication, QLabel, QVBoxLayout, QWidget, QHBoxLayout, QSizePolicy,
-    QComboBox, QPushButton, QGridLayout, QFrame
+    QComboBox, QPushButton, QGridLayout, QFrame,
 )
 from PyQt5.QtGui import (
     QImage, QPixmap, QFont, QPainter, QColor, QBrush, QConicalGradient
 )
 from PyQt5.QtCore import Qt, QTimer, QRect, pyqtSignal, QThread
 
+port_name = input("Enter Teensy Port, If you don't know run Detect.py: ")
 
 def find_camera_by_name(partial_name):
     try:
@@ -67,12 +69,13 @@ def find_analog_capture_device():
 class TeensyReader(QThread):
     data_received = pyqtSignal(str)
 
-    def __init__(self, port="COM8", baud=115200):
+    def __init__(self, port=port_name, baud=115200):
         super().__init__()
         self.port = port
         self.baud = baud
         self.running = True
         self.connected = False
+        self.command = '0'
 
     def run(self):
         while self.running:
@@ -88,6 +91,9 @@ class TeensyReader(QThread):
                         if line:
                             print(f"Raw line: {line}")
                             self.data_received.emit(line)
+                        if self.command != '0':
+                            self.serial_conn.write(self.command)
+                            self.command = '0'
                     except Exception as e:
                         print(f"Lost connection or read error: {e}")
                         self.connected = False
@@ -183,7 +189,7 @@ class TelemetryGUI(QWidget):
         self.sim_time = 0.0
         self.analog_camera_id = find_camera_by_name("AV TO USB2.0")
         self.digital_camera_id = find_camera_by_name("OBS Virtual Camera")
-        self.teensy_port = "COM8"
+        self.teensy_port = port_name
         self.initUI()
         self.setupCameraThreads()
         self.setupTeensyReader()
@@ -191,16 +197,24 @@ class TelemetryGUI(QWidget):
         self.timer.timeout.connect(self.update_telemetry_display)
         self.timer.start(100)
 
+    def keyPressEvent(self, event: QKeyEvent):
+        self.teensy_thread.command = (event.text()).encode()
+
     def initUI(self):
         main_layout = QVBoxLayout(self)
         self.setLayout(main_layout)
 
+        height = self.height()
+        vid_height = int(height/1.5)
+
         self.analog_video_frame = QLabel("Analog Video")
         self.analog_video_frame.setAlignment(Qt.AlignCenter)
-        self.analog_video_frame.setMinimumSize(480, 360)
+        self.analog_video_frame.setMinimumSize(int(4*vid_height/3), vid_height)
+        self.analog_video_frame.setMaximumSize(int(4*vid_height/3), vid_height)
         self.digital_video_frame = QLabel("Digital Video")
         self.digital_video_frame.setAlignment(Qt.AlignCenter)
-        self.digital_video_frame.setMinimumSize(480, 360)
+        self.digital_video_frame.setMinimumSize(int(16*vid_height/9), vid_height)
+        self.digital_video_frame.setMaximumSize(int(16*vid_height/9), vid_height)
 
         video_layout = QHBoxLayout()
         video_layout.addWidget(self.analog_video_frame)
@@ -251,7 +265,7 @@ class TelemetryGUI(QWidget):
         qimg = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
         pixmap = QPixmap.fromImage(qimg)
         target = self.analog_video_frame if camera_id == self.analog_camera_id else self.digital_video_frame
-        target.setPixmap(pixmap.scaled(target.width(), target.height(), Qt.KeepAspectRatio))
+        target.setPixmap(pixmap.scaled(target.width(), target.height()))
 
     def process_teensy_data(self, line):
         try:
@@ -305,5 +319,5 @@ class TelemetryGUI(QWidget):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = TelemetryGUI()
-    window.show()
+    window.showFullScreen()
     sys.exit(app.exec_())

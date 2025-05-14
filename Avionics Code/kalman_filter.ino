@@ -100,6 +100,17 @@ float constant_alpha(float velocity){
     
 }
 
+vector<vector<double>> run_kalman_filter(float dt, float alpha, float theta, float phi, float gamma, vector<vector<double>> measurement){
+    vector<vector<double>> P = {{0}}; //Define covariance matrix
+    vector<vector<double>> state = {{0}}; //define
+    vector<vector<double>> A = state_transition(dt, alpha, float theta, float phi, float gamma);
+    kalman_filter myObj(A, H, Q, R);
+    estimate = myObj.run_kalman_filter_estimate(P, state, measurement);
+
+    return estimate;
+    
+}
+
 
 int main(){
 

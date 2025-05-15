@@ -1,3 +1,5 @@
+#ifndef run_kalman_filter_h
+#define run_kalman_filter_h
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -111,8 +113,4 @@ vector<vector<double>> run_kalman_filter(float dt, float alpha, float theta, flo
     
 }
 
-
-int main(){
-
-
-}
+#endif /* run_kalman_filter_h */

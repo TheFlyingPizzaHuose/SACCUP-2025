@@ -13,19 +13,23 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 */
 #include <SoftwareSerial.h>
 #include <RH_RF95.h> // Include RFM9X library
+#include <SPI.h>               // SPI library
+#include <SD.h>                // SD card library
+const int sdSelect = 2;
 
 //RFM9x pin assignments
-#define RFM95_CS    10
-#define RFM95_INT  9
-#define RFM95_RST  14
+#define RFM95_CS 10
+#define RFM95_INT 9
+#define RFM95_RST 21
 // Change to 434.0 or other frequency, must match RX's freq!
 #define RF95_FREQ 433.0
 // Singleton instance of the radio driver
-RH_RF95 rf95(RFM95_CS, RFM95_INT);
-const int RFM9X_PWR = 23;
+RH_RF95 rf95(RFM95_CS,RFM95_INT);
+const int RFM95PWR = 23;
 
 #define rfSerial Serial2
 bool radio_debug = false;
+bool status_mode = 0;
 
 #define espSerial Serial1
 
@@ -77,32 +81,38 @@ const int PRGM_ERR = 0,
     RFD900_FAIL = 25,
     RFM9X_FAIL = 26,
     ADXL345_FAIL = 27,
-    LSM9SD1_FAIL = 28;
+    LSM9SD1_FAIL = 28,
+    INA219_FAIL = 29;
 
 void setup() {
+  //SPI.begin(); 
   Serial.begin(9600); // Start serial communication at 460800 baud rate
   rfSerial.begin(57600);
   espSerial.begin(19200);
-  Serial.println("Ground Station Ready!");
+
 
   uint32_t reset_reason = SRC_SRSR;  // Read reset status register
 
   Serial.print("Reset reason (raw value): 0x");
   Serial.println(reset_reason);
-
-  //RFM9x start
-  pinMode(RFM95_RST, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT);  // Set the LED pin as an output
+  //pinMode(RFM95_RST, OUTPUT);
+  /*digitalWrite(RFM95_RST, LOW);
+  //delay(100);
   digitalWrite(RFM95_RST, HIGH);
   delay(10);
   digitalWrite(RFM95_RST, LOW);
-  delay(10);
-  digitalWrite(RFM95_RST, HIGH);
-  if (!rf95.init()) {Serial.println("RFM9X_FAIL");}
-  else{
-    rf95.setFrequency(RF95_FREQ);
-    rf95.setTxPower(RFM9X_PWR, false);
+  delay(10);*/
+  if (!rf95.init()) {
+    Serial.println("RFM9X_FAIL");
+    digitalWrite(LED_BUILTIN, HIGH);
   }
-
+  else{
+    Serial.println("RFM9X_INIT_SUCESS");
+    rf95.setFrequency(RF95_FREQ);
+    rf95.setTxPower(RFM95PWR, false);
+  }
+  printCommands();
   //RFD Config
   delay(1000);
   rfSerial.print("+++");
@@ -116,6 +126,7 @@ void setup() {
 char lastData = 0;
 int message_index = 0;
 int last_time = millis();
+int status_time = millis();
 int msg_recieved = false;
 
 //ESP Variables
@@ -125,7 +136,7 @@ int record = 0;
 
 //int last_time_msg = 0;
 void loop() {
-  static char charArray[17] = {};
+  static char charArray[30] = {};
   if (false && rf95.available()) {
     // Should be a message for us now
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
@@ -154,19 +165,39 @@ void loop() {
       digitalWrite(LED_BUILTIN, LOW);*/
     }
   }
+  if(message_index > sizeof(charArray)){
+    message_index = 0;
+  }
   if (rfSerial.available()) {
     char data = rfSerial.read(); // Read from software serial
+    espSerial.print(data);
     //Serial.print(data);
     charArray[message_index] = data;
     if(data == 'L' && lastData == 'R'){//Checks if end characters are present
-      if(message_index == 21){
-        Serial.println("||RFD||");
-        msg_recieved = true;
-        for(int i = 0; i<22; i++){
-          int* bins = uint_to_binary(charArray[i]);
-          for(int x = 0; x<8; x++){
-            bitArray[i*8 + x] = *(bins+x);
-            //Serial.print(bitArray[i*8 + x]);
+      if(status_mode){
+        if(message_index == 4){
+          Serial.print("Sat Count: ");
+          byte temp = charArray[0];
+          Serial.print(temp);
+          Serial.print(" Bus Voltage: ");
+          temp = charArray[1];
+          Serial.print(1.0*temp/10);
+          Serial.print(" Current (mA): ");
+          temp = charArray[2];
+          Serial.print(temp);
+          Serial.println();
+        }
+      }else{
+        if(message_index == 21){
+          Serial.println("||RFD||");
+          msg_recieved = true;
+          last_time = millis();
+          for(int i = 0; i<22; i++){
+            int* bins = uint_to_binary(charArray[i]);
+            for(int x = 0; x<8; x++){
+              bitArray[i*8 + x] = *(bins+x);
+              //Serial.print(bitArray[i*8 + x]);
+            }
           }
         }
       }
@@ -175,33 +206,6 @@ void loop() {
       message_index++;
     }
     lastData = data;
-    last_time = millis();
-
-    //ESP Data
-    if(last[0] == 'I' && last[1] == ':' && last[2] == ' '){
-      record = 1;
-    }
-    last[0] = last[1];
-    last[1] = last[2];
-    last[2] = data;
-
-    if(record>0 && data == ' '){
-      for(int i = 8-record; i<7; i++){
-        espSerial.print(recorded[i]);
-      }
-      espSerial.println();
-      record = 0;
-    }
-    if(record > 0){
-      record++;
-    }
-    recorded[0] = recorded[1];
-    recorded[1] = recorded[2];
-    recorded[2] = recorded[3];
-    recorded[3] = recorded[4];
-    recorded[4] = recorded[5];
-    recorded[5] = recorded[6];
-    recorded[6] = data;
   }
   if(msg_recieved){
     //Serial.println(micros()-last_time_msg);
@@ -249,10 +253,16 @@ void loop() {
       }
     }
     msg_recieved=false;
-  }else if(millis() - last_time > 1000){
-    Serial.println("Waiting For Signal, Ensure terminal is set to: No Line Ending");
+  }else if(millis() - last_time > 1000 && !status_mode){
+    Serial.print("Telemetry Data: ");
+    Serial.println("Waiting For Signal, Ensure terminal is set to: No Line Ending, Enter \"h\" for a list of commands");
     if(radio_debug){Serial.println("Radio Debugging Active");}
     last_time = millis();
+  }
+  if(status_mode && millis() - status_time > 1000){
+    Serial.print("Status Data: ");
+    Serial.println("Waiting For Signal, Ensure terminal is set to: No Line Ending, Enter \"h\" for a list of commands");
+    status_time = millis();
   }
   if (Serial.available()) {
       char data = Serial.read();
@@ -260,7 +270,7 @@ void loop() {
           data = 0xff;
           rfSerial.print(data);
       }else if(data == 's'){
-        radio_debug = !radio_debug;
+        status_mode = !status_mode;
       }else if(data == 'h'){
         printCommands();
       }else if(!radio_debug){
@@ -278,9 +288,10 @@ void loop() {
 void printCommands(){
   Serial.println();
   Serial.println("Below are the commands for the avionics system:");
-  Serial.println("1: Low Power Mode\n2: Normal Power Mode\n3: High Data Transfer");
-  Serial.println("4: Low Data Transfer\n5: Redo Startup Sequence\n6: Report battery voltage");
-  Serial.println("7: Ready for launch\n8: Toggle Debug\nF: Shutdown");
+  Serial.println("1: Low Power Mode\n2: Normal Power Mode\n3: Video On");
+  Serial.println("4: Video Off\n555: Redo Startup Sequence\n6: Turn on/off power and sat status");
+  Serial.println("7: Arm for launch\n888: Disarm for launch\nFFF: Shutdown");
+  Serial.println("s: Change data shown from status to telemetry\nh: Display this command list");
 }
 
 void processData(String data) {
@@ -353,6 +364,7 @@ void printErr(){
       case RFM9X_FAIL + 32: Serial.print("RFM9X_FAIL  "); break;
       case ADXL345_FAIL + 32: Serial.print("ADXL375_FAIL  "); break;
       case LSM9SD1_FAIL + 32: Serial.print("LSM9SD1_FAIL  "); break;
+      case INA219_FAIL + 32: Serial.print("INA219_FAIL  "); break;
     }
   }
   Serial.print(" ");

@@ -21,6 +21,7 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 #include <Adafruit_Sensor.h>   // Adafruit unified sensor library
 #include <Adafruit_LSM9DS1.h>  // Include LSM9DS1 library
 #include <Adafruit_ADXL375.h>  // Include ADXL375 library
+#include "Adafruit_INA219.h"   // Include INA 219 library
 #include <RH_RF95.h>           // Include RFM9X library
 #include <cmath>
 #include <iostream>
@@ -92,6 +93,7 @@ char* checkFile(bool mode = 0) {  //Alleon Oxales
 }  //end checkFile
 
 // Create the sensor objects
+Adafruit_INA219 ina219; //INA 219 Object
 Adafruit_MPU6050 mpu;         //Accelerometer
 Adafruit_BMP280 bmp1(&Wire);  //Pitot Tube Pressure Sensor
 Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(&Wire);
@@ -100,11 +102,17 @@ Adafruit_BMP085 bmp2;
 Adafruit_BMP085 bmp3;
 Adafruit_ADXL375 adxl = Adafruit_ADXL375(12345, &Wire1);
 
+//GPS Variables
 int gpsVersion = 2;  //SAM-M8Q
+uint gps_sats = 0;
+uint glonas_sats = 0;
+uint gallileo_sats = 0;
+byte setGSV_ON[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00}; //Left here so that it's checksum can be calculated during start
 
 // AV Modes
 bool lowPower = 0;
 bool videoPower = 0;
+bool pwr_gps_status_poll = 1;
 int time_vid_off = 0;
 int shutdownCheck[3] = {0, 0, 0};  //All three elements must be >0 to activate shutdown
 int restartCheck[3] = {0, 0, 0}; //All three elements must be >0 to activate restart
@@ -156,7 +164,8 @@ const int PRGM_ERR = 0,
           RFD900_FAIL = 25,
           RFM9X_FAIL = 26,
           ADXL375_FAIL = 27,
-          LSM9SD1_FAIL = 28;
+          LSM9SD1_FAIL = 28,
+          INA219_FAIL = 29;
 
 //Component cycle time micros
 uint BMP280_RATE = 5500,  //Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5, Ultra High: 37.5
@@ -169,7 +178,8 @@ uint BMP280_RATE = 5500,  //Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5
      LSM_RATE = 1500,
      ADXL345_RATE = 350,
      SD_RATE = 10000,
-     DYN_START_RATE = 100000;
+     DYN_START_RATE = 100000,
+     STATUS_RATE = 10000;
 
 //Component last cycle time micros
 uint BMP280_LAST = 0,
@@ -182,12 +192,13 @@ uint BMP280_LAST = 0,
      LSM_LAST = 0,
      ADXL345_LAST = 0,
      SD_LAST = 0,
-     DYN_START_LAST = 0;
+     DYN_START_LAST = 0,
+     STATUS_LAST = 0;
 
 //Time variables
-uint time_launch = 0;
-uint last_millis = 0;
-uint last_micros = 0;
+byte time_launch = 0;
+byte last_millis = 0;
+byte last_micros = 0;
 float time_since_launch = 0;
 
 //Start Variables
@@ -260,7 +271,7 @@ void setup() {
   Wire.begin();
   Wire1.begin();
   Wire2.begin();
-  pinMode(lowpower_pin, OUTPUT);
+  pinMode(video_pin, OUTPUT);
   pinMode(shutdown_pin, OUTPUT);
 
   URTCLIB_WIRE.begin();
@@ -278,6 +289,7 @@ void setup() {
     setErr(BMP180_2_FAIL);
     setErr(ADXL375_FAIL);
     setErr(LSM9SD1_FAIL);
+    setErr(INA219_FAIL);
   }
   //gpsChecksum(poll_interfere, sizeof(poll_interfere));
 }
@@ -298,6 +310,7 @@ void loop() {
       AS5600_LAST = 0;
       LSM_LAST = 0;
       SD_LAST = 0;
+      STATUS_LAST = 0;
     }
 
     readRFD();
@@ -361,7 +374,7 @@ void loop() {
           BMP180_2_PRESS = bmp3.readPressure();
           bmp3.readCommand();
         }
-        position[2] = BMP180_2_PRESS;
+        //position[2] = BMP180_2_PRESS;
         BMP180_LAST = micros();
         if(!errorCodes[SD_FAIL]){
           logfile.print(micros());
@@ -413,14 +426,31 @@ void loop() {
       digitalWrite(video_pin, LOW);
     }else if(time_since_off > 500 && time_since_off < 2500){
       digitalWrite(video_pin, HIGH);
+    }else if(time_since_off > 2500){
+      digitalWrite(video_pin, LOW);
     }
+  }
+  //Power and sattilite status
+  if(pwr_gps_status_poll && micros()-STATUS_LAST > STATUS_RATE){
+    char busvoltage = 0, current_mA = 0;
+    if(!errorCodes[INA219_FAIL]){
+      busvoltage = std::round(ina219.getBusVoltage_V()*10);
+      current_mA = abs(std::round(ina219.getCurrent_mA()));
+    }
+    //Send sat and power data
+    char sat_count = gps_sats + glonas_sats + gallileo_sats;
+    rfSerial.print(sat_count);
+    rfSerial.print(busvoltage);
+    rfSerial.print(current_mA);
+    rfSerial.print('R');
+    rfSerial.print('L');
+    STATUS_LAST = micros();
   }
 }
 
 //==========START SEQUENCES==========Alleon Oxales
 void normalStart() {
   Serial.println("NORM_START");
-
   //Initialize sensors and set error if it fails
   if (!initSAM_M8Q()) { setErr(SAMM8Q_FAIL); }
   if (!mpu.begin(104, &Wire1)) { setErr(MPU6050_FAIL); } else{setupMPU6050();}  //Setups MPU range of measurement and measurement rate
@@ -428,7 +458,9 @@ void normalStart() {
   if (!bmp1.begin()) { setErr(BMP280_FAIL); }  
   if (!bmp2.begin(0, &Wire2) /*0: low power, 1: normal, 2: high res, 3: ultra high*/) { setErr(BMP180_1_FAIL); }
   if (!bmp3.begin(0, &Wire1) /*0: low power, 1: normal, 2: high res, 3: ultra high*/) { setErr(BMP180_2_FAIL); }
+  delay(10);// This delay is needed because it seems Wire1 is used for a bit after trying to connect to bmp3
   if (!adxl.begin()) { setErr(ADXL375_FAIL); }
+  if (!ina219.begin()) { setErr(INA219_FAIL); }
   //adxl.setRange(ADXL345_RANGE_16_G);
 
   logfile = SD.open(checkFile(), FILE_WRITE);  //Opens new file with highest index
@@ -441,6 +473,7 @@ void normalStart() {
   logfile.println("TIME(us), Data ID, Data");  // write header at top of log file
   logfile.println("Data IDs, 0: GPS, 1: BMP280, 2: BMP180 1&2, 3: MPU6050, 4: LSM9DS1, 5: ADXL375, 6: AS5600 1&2");  // write header at top of log file
   logfile.flush();
+  gpsChecksum(setGSV_ON, sizeof(setGSV_ON));
 }
 //Generate the configuration string for Factory Default Settings
 byte setDefaults[] = { 0xB5, 0x62, 0x06, 0x09, 0x0D, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x17, 0x2F, 0xAE };
@@ -461,7 +494,7 @@ byte setNav[] = { 0xB5, 0x62, 0x06, 0x24, 0x24, 0x00, 0xFF, 0xFF, 0x08, 0x03, 0x
 //Generate the configuration string for NMEA messages
 byte setGLL[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x2B };
 byte setGSA[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x31 };
-byte setGSV[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x39 };
+byte setGSV_OFF[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x39 };
 byte setVTG[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x46 };
 byte setGGA[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x23 };
 byte set4_1[] = { 0xB5, 0x62, 0x06, 0x17, 0x14, 0x00, 0x00, 0x41, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0x57 };
@@ -485,6 +518,7 @@ void dynamicStart() {  //Alleon Oxales, performs startup sequence steps every 10
       case 1:
         gpsSerial.begin(38400);
         sendUBX(setDefaults, sizeof(setDefaults));
+        gpsChecksum(setGSV_ON, sizeof(setGSV_ON));
         break;
       case 2:
         gpsSerial.begin(9600);
@@ -497,56 +531,58 @@ void dynamicStart() {  //Alleon Oxales, performs startup sequence steps every 10
         sendUBX(setNav, sizeof(setNav));
         break;
       case 5:
-        sendUBX(setGSV, sizeof(setGSV));
-        break;
-      case 6:
         sendUBX(setDataRate, sizeof(setDataRate));
         break;
-      case 7:
+      case 6:
         sendUBX(set4_1, sizeof(set4_1));
         break;
-      case 8:
+      case 7:
         sendUBX(setSat, sizeof(setSat));
         break;
-      case 9:
+      case 8:
         sendUBX(setVTG, sizeof(setVTG));
         break;
-      case 10:
+      case 9:
         sendUBX(setJam, sizeof(setJam));
         break;
-      case 11:
+      case 10:
         sendUBX(setGLL, sizeof(setGLL));
         break;
-      case 12:
+      case 11:
         sendUBX(setGGA, sizeof(setGGA));
         break;
-      case 13:
+      case 12:
         sendUBX(setBaudRate, sizeof(setBaudRate));
         gpsSerial.end();
         gpsSerial.flush();
         gpsSerial.begin(38400);
         clearErr(SAMM8Q_FAIL);
         break;
-      case 14: 
+      case 13: 
         if (!mpu.begin(104, &Wire1)) { setErr(MPU6050_FAIL); } 
         else{
           setupMPU6050();
           clearErr(MPU6050_FAIL);
         }
         break;
-      case 15:
+      case 14:
         if (!lsm.begin()) { setErr(LSM9SD1_FAIL); } 
         else{
           setupLSM();
           clearErr(LSM9SD1_FAIL);
         }
         break;
-      case 16:
+      case 15:
         if (!adxl.begin()) { setErr(ADXL375_FAIL); }
         else{
           clearErr(ADXL375_FAIL);
         }
         break;
+      case 16:
+        if(!ina219.begin()) { setErr(INA219_FAIL);}
+        else{
+          clearErr(INA219_FAIL);
+        }
       case 17:
         logfile = SD.open(checkFile(), FILE_WRITE);  //Opens new file with highest index
         long epochTime = epoch();
@@ -586,11 +622,11 @@ bool initSAM_M8Q() {
     gpsReady = 0;
     Serial.println("Nav mode Failed!");
   }
-  Serial.print("Deactivating GSV Messages... ");
+  /*Serial.print("Deactivating GSV Messages... ");
   if (gpsSet(setGSV, sizeof(setGSV)) == 3) {
     gpsReady = 0;
     Serial.println("NMEA GSV Message Deactivation Failed!");
-  }
+  }Moved to command stream*/
   Serial.print("Set 10Hz data rate... ");
   if (gpsSet(setDataRate, sizeof(setDataRate)) == 3) {
     gpsReady = 0;
@@ -753,7 +789,7 @@ void parseGPS(char* msg, byte size) {  //Alleon Oxales
   static char item[20] = {};
   if (*msg == '$' && *(msg + 1) == 'G' && *(msg + 2) == 'N') {  //Looks for start of message with "$GN"
     msg_index += 3;
-    if (*(msg + 3) == 'R' && *(msg + 4) == 'M' && *(msg + 5) == 'C') {  //Checks message type
+    if (*(msg + 3) == 'R' && *(msg + 4) == 'M' && *(msg + 5) == 'C') {  //Checks RMC type
       msg_index += 4;                                                   //Skips the first comma
       while (msg_index < size) {
         if (*(msg + msg_index) == ',') {
@@ -780,6 +816,49 @@ void parseGPS(char* msg, byte size) {  //Alleon Oxales
         }
         msg_index++;
       }
+    }
+  }
+  msg_index = 0;
+  if (*(msg + 3) == 'G' && *(msg + 4) == 'S' && *(msg + 5) == 'V') {  //Checks GSV type pg. 156 of M8 Reciever Desc.
+    byte sat_count = 0;
+    msg_index += 7;                                                   //Skips the first comma
+    while (msg_index < size) {
+      if (*(msg + msg_index) == ',') {
+        switch (item_index) {
+          case 0: break;   //numMsg
+          case 1: break;   //msgNum
+          case 2:{ //numSV
+            uint exp = 1;
+            for(int i = 0; i < item_length; i++){
+              sat_count += (item[item_length-i-1] - '0')*exp;
+              exp *= 10;
+            }
+            break;
+          }   
+          case 4: break;   //satID
+          case 6: break;   //elevation
+          case 7: break;   //azimuth
+          case 8: break;   //signal strength
+          case 9: break;   //nmea signal ID
+        }
+        item_index++;
+        item_length = 0;
+      } else {
+        item[item_length] = *(msg + msg_index);
+        item_length++;
+      }
+      msg_index++;
+    }
+    switch(*(msg + 2)){
+      case 'P':
+        gps_sats = sat_count;
+        break;
+      case 'L':
+        glonas_sats = sat_count;
+        break;
+      case 'A':
+        gallileo_sats = sat_count;
+        break;
     }
   }
   if (debug) { Serial.print("||||"); }
@@ -1175,8 +1254,6 @@ int readRawAngle(TwoWire* wire) {  //Ryan Santiago
 }  //end readRawAngle
 //==============================
 
-
-
 void setErr(int errorCode) {
   errorCodes[errorCode] = 1;
 }  //end setErr
@@ -1234,9 +1311,16 @@ void commands(char command) {  //Alleon Oxales
         memset(restartCheck, 0, sizeof(restartCheck));
       }
       break;
-    case 0x06:
-      //sendUBX(poll_interfere, sizeof(poll_interfere));
+    case 0x06:{
+      if(pwr_gps_status_poll){
+        gpsSet(setGSV_OFF, sizeof(setGSV_OFF));
+        pwr_gps_status_poll = 0;
+      }else{
+        gpsSet(setGSV_ON, sizeof(setGSV_ON));
+        pwr_gps_status_poll = 1;
+      }
       break;
+    }
     case 0x07:
       break;
     case 0x08:

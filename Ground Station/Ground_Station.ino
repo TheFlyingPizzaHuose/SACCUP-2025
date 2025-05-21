@@ -30,6 +30,7 @@ const int RFM95PWR = 23;
 #define rfSerial Serial2
 bool radio_debug = false;
 bool status_mode = 0;
+bool rfm_mode = 0;
 
 #define espSerial Serial1
 
@@ -87,7 +88,7 @@ const int PRGM_ERR = 0,
 void setup() {
   //SPI.begin(); 
   Serial.begin(9600); // Start serial communication at 460800 baud rate
-  rfSerial.begin(57600);
+  rfSerial.begin(115200);
   espSerial.begin(19200);
 
 
@@ -137,13 +138,13 @@ int record = 0;
 //int last_time_msg = 0;
 void loop() {
   static char charArray[30] = {};
-  if (false && rf95.available()) {
+  if (rf95.available()) {
     // Should be a message for us now
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
     uint8_t len = sizeof(buf);
 
     if (rf95.recv(buf, &len)) {
-      Serial.print("||RFM||");
+      Serial.println("||RFM||");
       msg_recieved = true;
       for(int i = 0; i<23; i++){
         int* bins = uint_to_binary(buf[i]);
@@ -191,6 +192,7 @@ void loop() {
         if(message_index == 21){
           Serial.println("||RFD||");
           msg_recieved = true;
+          //Serial.println(millis()-last_time);
           last_time = millis();
           for(int i = 0; i<22; i++){
             int* bins = uint_to_binary(charArray[i]);
@@ -273,6 +275,8 @@ void loop() {
         status_mode = !status_mode;
       }else if(data == 'h'){
         printCommands();
+      }else if(data == 'r'){
+        rfm_mode = !rfm_mode;
       }else if(!radio_debug){
         for(int i = 0; i < 10; i++){
           data = data - '0';

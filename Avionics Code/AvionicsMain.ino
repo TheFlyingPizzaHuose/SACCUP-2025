@@ -132,7 +132,7 @@ int bitLengthList[10] = {
 };     //Represents the number of bits for each part of the data transmission excluding checksum and endchar
 const int bitArrayLength = 152;
 const int charArrayLegnth = bitArrayLength / 8 + 3;
-int my_event_arr[6] = {};
+int my_event_arr[6] = {0,0,0,0,0,0};
 int errorCodes[32] = {};  //Check document for error code list
 
 //Error codes
@@ -251,7 +251,7 @@ float position[3] = { 0, 0, 0 },  //Absolute position measurements
 
 void setup() {
   Serial.begin(57600);    // Start hardware serial communication (for debugging)
-  rfSerial.begin(57600);  //Init RFD UART
+  rfSerial.begin(115200);  //Init RFD UART
 
   if(SRC_SRSR != 1){setErr(PRGM_ERR);}// Read reset status register and PRGM_ERR if reset is not a power cycle
   //RFM9x start
@@ -402,6 +402,12 @@ void loop() {
     }
     sendRFD();
     sendRFM();
+    if(my_event_arr[0]){//Launch event autotriggers
+      lowPower = 0;
+      videoPower = 1;
+      //gpsSet(setGSV_OFF, sizeof(setGSV_OFF));
+      pwr_gps_status_poll = 0;
+    }
   } else {  //Recovery Mode
     dynamicStart();
     readRFD();
@@ -927,7 +933,7 @@ void sendRFM() {
 
     //Serial.println("Sending...");
     //delay(10);
-    rf95.send(massage, 17);
+    rf95.send(massage, charArrayLegnth);
 
     //Serial.println("Waiting for packet to complete...");
     //delay(10);
@@ -1072,9 +1078,9 @@ void event_detection() {
   // Main Deploy =============================================
   // Landed ==================================================
   if (position[2] < 50.0) {
-    my_event_arr[3] = 1;
+    my_event_arr[5] = 1;
   } else {
-    my_event_arr[3] = 0;
+    my_event_arr[5] = 0;
   }
 }
 bool detect_good_shutdown() {  //Alleon Oxales
@@ -1267,7 +1273,7 @@ void commands(char command) {  //Alleon Oxales
   switch (command) {  //Check for commands
     case 0xff:
       for (int i = 0; i < 3; i++) {  //Set the latest shutdownCheck
-        if (shutdownCheck[i] == 0) {
+        if (shutdownCheck[i] == 0 && my_event_arr[5]) {//Only allow shutdown command to run during landing
           shutdownCheck[i] = 0xFF;
           break;
         }
@@ -1284,18 +1290,22 @@ void commands(char command) {  //Alleon Oxales
       lowPower = 1;
       break;
     case 0x02:
-      lowPower = 0;
+      if(!my_event_arr[0]){//Prevent low power during flight
+        lowPower = 0;
+      }
       break;
     case 0x03:
       videoPower = 1;
       break;
     case 0x04:
-      videoPower = 0;
-      time_vid_off = millis();
+      if(!my_event_arr[0]){//Prevent video off during flight
+        videoPower = 0;
+        time_vid_off = millis();
+      }
       break;
     case 0x05:
       for (int i = 0; i < 3; i++) {  //Set the latest shutdownCheck
-        if (restartCheck[i] == 0) {
+        if (restartCheck[i] == 0 && !my_event_arr[0]) { //Prevent restart during flight
           restartCheck[i] = 0xFF;
           break;
         }
@@ -1315,7 +1325,7 @@ void commands(char command) {  //Alleon Oxales
       if(pwr_gps_status_poll){
         gpsSet(setGSV_OFF, sizeof(setGSV_OFF));
         pwr_gps_status_poll = 0;
-      }else{
+      }else if(!my_event_arr[0]){//Prevent extra status messages during flight
         gpsSet(setGSV_ON, sizeof(setGSV_ON));
         pwr_gps_status_poll = 1;
       }

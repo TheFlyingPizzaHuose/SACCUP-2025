@@ -28,7 +28,6 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 #include <EEPROM.h>
 #include <uRTCLib.h>  //Include Real Time Clock Library
 #include <time.h>
-#include <kalman_filter.h>
 
 uRTCLib rtc(0x68);  //Real time clock I2C address
 char daysOfTheWeek[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
@@ -167,16 +166,6 @@ const int PRGM_ERR = 0,
           ADXL375_FAIL = 27,
           LSM9SD1_FAIL = 28,
           INA219_FAIL = 29;
-
-// Kalman Filter initialization (To be changed)
-vector<vector<double>> state_est = {{0}};
-vector<vector<double>> covar_est = {{0}};
-vector<vector<double>> A = {{0}};
-vector<vector<double>> H = {{0}};
-vector<vector<double>> Q = {{0}};
-vector<vector<double>> R = {{0}};
-double alpha_prev = 0;
-double alpha = 0;
 
 //Component cycle time micros
 uint BMP280_RATE = 5500,  //Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5, Ultra High: 37.5
@@ -463,15 +452,6 @@ void loop() {
     rfSerial.print('L');
     STATUS_LAST = micros();
   }
-
-  //Kalman Filter
-  alpha = constant_alpha(velocity)
-  vector<vector<double>> A = state_transition(alpha, alpha_prev, theta, phi, gamma);
-  KalmanFilter myObj = KalmanFilter(A, H, Q, R);
-  state_est = myObj.run_kalman_filter_estimate(covar_est, state_est, measurement);
-  covar_est = myObj.run_kalman_filter_covar(covar_est, state_est, measurement);
-  alpha_prev = alpha;
-  
 }
 
 //==========START SEQUENCES==========Alleon Oxales
@@ -1293,7 +1273,8 @@ void commands(char command) {  //Alleon Oxales
   switch (command) {  //Check for commands
     case 0xff:
       for (int i = 0; i < 3; i++) {  //Set the latest shutdownCheck
-        if (shutdownCheck[i] == 0 && my_event_arr[5]) {//Only allow shutdown command to run during landing
+        if (shutdownCheck[i] == 0 && (my_event_arr[5] || !my_event_arr[0])) {//Only allow shutdown command to run during landing
+          Serial.println('F');
           shutdownCheck[i] = 0xFF;
           break;
         }

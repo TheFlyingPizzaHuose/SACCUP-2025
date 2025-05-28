@@ -144,8 +144,10 @@ void loop() {
     uint8_t len = sizeof(buf);
 
     if (rf95.recv(buf, &len)) {
-      Serial.println("||RFM||");
-      msg_recieved = true;
+      if(!status_mode){
+        Serial.println("||RFM||");
+        msg_recieved = true;
+      }
       for(int i = 0; i<23; i++){
         int* bins = uint_to_binary(buf[i]);
         for(int x = 0; x<8; x++){

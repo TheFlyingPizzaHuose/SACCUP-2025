@@ -236,7 +236,7 @@ class KalmanFilter {
     }
 };
 
-double constant_alpha(double velocity){
+double constant_alpha(double velocity, double altitude){
     // These constants are good
     double pi = 3.1415926535897932384626433832795028841971693993751058209749;
     double C_r = 0.381;
@@ -254,7 +254,7 @@ double constant_alpha(double velocity){
 
     // ----------------------------------------------------------------------
 
-    double rho = 1.225; //Replace with equation
+    double rho = 1.225*pow(1 - 6.875e-6 * altitude, 5.2561); //Replace with equation
     double M = velocity / 343;
     double lamb = C_t / C_r;
     double mgc = (2.0/3.0) * C_r * ((pow(lamb, 2) + lamb + 1) / (lamb + 1)); 

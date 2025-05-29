@@ -315,11 +315,43 @@ class runKalmanFilter {
                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}};
       double velocity = 0;
       double altitude = 0;
+      double pressure1 = 0;
+      double pressure2 = 0;
       double alpha = 0;
       double alpha_prev = 0;
       double phi = 0;
       double theta = 0;
       double gamma = 0;
+      double lat = 0;
+      double lon = 0;
+      double altitude_1 = 0;
+      double alttiude_2 = 0;
+      double vx = 0;
+      double vy = 0;
+      double vz = 0;
+      double ax1 = 0;
+      double ay1 = 0;
+      double az1 = 0;
+      double ax2 = 0;
+      double ay2 = 0;
+      double az2 = 0;
+      double ax3 = 0;
+      double ay3 = 0;
+      double az3 = 0;
+      double gx1 = 0;
+      double gy1 = 0;
+      double gz1 = 0;
+      double gx2 = 0;
+      double gy2 = 0;
+      double gz2 = 0;
+      double a = 0;
+      double b = 0;
+      double c = 0;
+      double d = 0;
+      double MX = 0;
+      double MY = 0;
+      double MZ = 0;
+
       vector<vector<double>> A_matrix = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                             {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                             {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
@@ -407,12 +439,41 @@ class runKalmanFilter {
       runKalmanFilter(){}
       ~runKalmanFilter(){}
 
-      void updateData(double v, double h, double th, double p, double g){
-          velocity = v;
-          altitude = h;
-          theta = th;
-          phi = p;
-          gamma = g;
+      void updateData(double GPS_LAT, double GPS_LON, double PRESS_180, double PRESS_280, 
+                      double MPU_AX, double MPU_AY, double MPU_AZ, double LSM_AX, 
+                      double LSM_AY, double LSM_AZ, double ADXL345_AX, double ADXL345_AY, 
+                      double ADXL345_AZ, double LSM_GX, double LSM_GY,double LSM_GZ, 
+                      double MPU_GX, doube MPU_GY, double MPU_GZ, double LSM_MX, 
+                      double LSM_MY, double LSM_MZ){
+          lat = GPS_LAT;
+          lon = GPS_LON;
+          altitude_1 = 0;
+          altitude_2 = 0;
+          vx = 0;
+          vy = 0;
+          vz = 0;
+          ax1 = MPU_AX;
+          ay1 = MPU_AY;
+          az1 = MPU_AZ;
+          ax2 = LSM_AX;
+          ay2 = LSM_AY;
+          az2 = LSM_AZ;
+          ax3 = ADXL345_AX;
+          ay3 = ADXL345_AY;
+          az3 = ADXL345_AZ;
+          gx1 = LSM_GX;
+          gy1 = LSM_GY;
+          gz1 = LSM_GZ;
+          gx2 = MPU_GX;
+          gy2 = MPU_GY;
+          gz2 = MPU_GZ;
+          theta = LSM_MX * 0.1 + integrated_gyro * 0.9;
+          phi = LSM_MY * 0.1 + integrated_gyro * 0.9;
+          gamma = LSM_MZ * 0.1 + integrated_gyro * 0.9;
+          a = cos(theta/2) * cos(phi/2) * cos(gamma / 2) + sin(theta / 2) * sin (phi / 2) * sin(gamma / 2);
+          b = sin(theta/2) * cos(phi / 2) * cos(gamma / 2) - cos(theta / 2) * sin(phi/2) * sin(gamma/2);
+          c = cos(theta/2)*sin(phi/2) * cos(gamma / 2) + sin(theta / 2) * cos(phi / 2) * sin(gamma / 2);
+          d = cos(theta / 2) * cos(phi / 2) * sin(gamma / 2) - sin(theta/2) * sin(phi/2) * cos(gamma/2);
       };
 
       void updateAlpha(){
@@ -425,7 +486,34 @@ class runKalmanFilter {
       }
 
       void updateMeasurement(){
-          
+         measurement = {{lat},
+                        {lon},
+                        {altitude_1},
+                        {altitude_2},
+                        {vx},
+                        {vy},                         
+                        {vz},
+                        {ax1},
+                        {ay1},
+                        {az1},
+                        {ax2},
+                        {ay2},
+                        {az2},
+                        {ax3},
+                        {ay3},
+                        {az3},
+                        {0},
+                        {0},
+                        {0},
+                        {0},
+                        {0},
+                        {0},
+                        {0},
+                        {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0}};
       }
 
       void updateState_and_Covar(){

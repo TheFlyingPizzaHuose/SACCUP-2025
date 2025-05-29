@@ -172,7 +172,75 @@ vector<vector<double>> subtractMat(vector<vector<double>> mat1, vector<vector<do
 class KalmanFilter {
   public:
       vector<vector<double>> A_matrix;
-      vector<vector<double>> H_matrix = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+      vector<vector<double>> H_matrix;
+      vector<vector<double>> Q_matrix;
+      vector<vector<double>> R_matrix;
+      
+
+      KalmanFilter(vector<vector<double>> A, vector<vector<double>> H, 
+          vector<vector<double>> Q, vector<vector<double>> R){
+          A_matrix = A;
+          H_matrix = H;
+          Q_matrix = Q;
+          R_matrix = R;
+      }
+      ~KalmanFilter(){}
+      // seems fine here
+      vector<vector<double>> predict_state(vector<vector<double>> state_0){
+        return matrix_multiplication(A_matrix, state_0);
+        }
+        // seems fine here
+      vector<vector<double>> predict_error_covariance(vector<vector<double>> err_co_0){
+          vector<vector<double>> result = matrix_multiplication(A_matrix, err_co_0);
+          return matrix_addition(matrix_multiplication(result, transposeMat(A_matrix)), Q_matrix);
+        }
+
+      // working fine
+      vector<vector<double>> kalman_gain(vector<vector<double>> pred_co){
+          vector<vector<double>> result = matrix_multiplication(H_matrix, pred_co);
+
+          vector<vector<double>> result_two = transposeMat(H_matrix); 
+          vector<vector<double>> result_three = matrix_multiplication(result, result_two);
+          vector<vector<double>> result_four = matrix_addition(result_three, R_matrix);
+          vector<vector<double>> result_five = matrix_multiplication(pred_co, result_two);
+          vector<vector<double>> result_six = get_inverse(result_four, result_four.size());
+          return matrix_multiplication(result_five, result_six);
+
+        }
+      vector<vector<double>> estimate(vector<vector<double>> kal_gain, vector<vector<double>> pred_state, vector<vector<double>> z_0){
+          vector<vector<double>> result = subtractMat(z_0, matrix_multiplication(H_matrix, pred_state));
+          return matrix_addition(pred_state, matrix_multiplication(kal_gain, result));
+        }
+        
+      vector<vector<double>> compute_error_covariance(vector<vector<double>> pred_co, vector<vector<double>> kal_gain){
+          vector<vector<double>> result = matrix_multiplication(kal_gain, H_matrix);
+          return subtractMat(pred_co, matrix_multiplication(result, pred_co));
+      }
+
+      vector<vector<double>> run_kalman_filter_estimate(vector<vector<double>> err_co_estimate, 
+          vector<vector<double>> state_0, vector<vector<double>> measurement){
+          vector<vector<double>> predicted_state = predict_state(state_0);
+          vector<vector<double>> predicted_err_co = predict_error_covariance(err_co_estimate);
+          vector<vector<double>> kal_gain = kalman_gain(predicted_err_co);
+          vector<vector<double>> est_state = estimate(kal_gain, predicted_state, measurement);
+          vector<vector<double>> comp_err_co = compute_error_covariance(predicted_err_co, kal_gain);
+          return est_state;
+      }
+
+      vector<vector<double>> run_kalman_filter_covar(vector<vector<double>> err_co_estimate, 
+        vector<vector<double>> state_0, vector<vector<double>> measurement){
+        vector<vector<double>> predicted_state = predict_state(state_0);
+        vector<vector<double>> predicted_err_co = predict_error_covariance(err_co_estimate);
+        vector<vector<double>> kal_gain = kalman_gain(predicted_err_co);
+        vector<vector<double>> comp_err_co = compute_error_covariance(predicted_err_co, kal_gain);
+        return comp_err_co;
+    }
+};
+
+
+class runKalmanFilter {
+  public:
+        vector<vector<double>> H_matrix = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                             {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                             {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                             {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
@@ -245,64 +313,90 @@ class KalmanFilter {
                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0},
                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0},
                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}};
+        double velocity;
+        double altitude;
+        double alpha = 0;
+        double alpha_prev;
+        double velocity;
+        double altitude;
+        double phi;
+        double theta;
+        double gamma;
+        vector<vector<double>> A(18, vector<double>(18,1));
+        vector<vector<double>> state = {{0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0},
+                                    {0}};
+          vector<vector<double>> covar = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                    {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                    {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                    {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                    {0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                    {0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0},
+                                    {0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0},
+                                    {0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0},
+                                    {0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0},
+                                    {0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0},
+                                    {0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0},
+                                    {0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0},
+                                    {0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0},
+                                    {0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0},
+                                    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0},
+                                    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0},
+                                    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0},
+                                    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}};
+          vector<vector<double>> measurement(26, vector<double>(1,1));
 
-      KalmanFilter(vector<vector<double>> A, vector<vector<double>> H, 
-          vector<vector<double>> Q, vector<vector<double>> R){
-          A_matrix = A;
+      runKalmanFilter(){}
+      ~runKalmanFilter(){}
+
+      void updateData(double v, double h, double th, double p, double g){
+          velocity = v;
+          altitude = h;
+          theta = th;
+          phi = p;
+          gamma = g;
+      };
+
+      void updateAlpha(){
+          alpha_prev = alpha;
+          alpha = constant_alpha(velocity, altitude);
+      };
+
+      void updateStateTransition(){
+          A = state_transition(alpha, alpha_prev, theta, phi, gamma);
       }
-      ~KalmanFilter(){}
-      // seems fine here
-      vector<vector<double>> predict_state(vector<vector<double>> state_0){
-        return matrix_multiplication(A_matrix, state_0);
-        }
-        // seems fine here
-      vector<vector<double>> predict_error_covariance(vector<vector<double>> err_co_0){
-          vector<vector<double>> result = matrix_multiplication(A_matrix, err_co_0);
-          return matrix_addition(matrix_multiplication(result, transposeMat(A_matrix)), Q_matrix);
-        }
 
-      // working fine
-      vector<vector<double>> kalman_gain(vector<vector<double>> pred_co){
-          vector<vector<double>> result = matrix_multiplication(H_matrix, pred_co);
-
-          vector<vector<double>> result_two = transposeMat(H_matrix); 
-          vector<vector<double>> result_three = matrix_multiplication(result, result_two);
-          vector<vector<double>> result_four = matrix_addition(result_three, R_matrix);
-          vector<vector<double>> result_five = matrix_multiplication(pred_co, result_two);
-          vector<vector<double>> result_six = get_inverse(result_four, result_four.size());
-          return matrix_multiplication(result_five, result_six);
-
-        }
-      vector<vector<double>> estimate(vector<vector<double>> kal_gain, vector<vector<double>> pred_state, vector<vector<double>> z_0){
-          vector<vector<double>> result = subtractMat(z_0, matrix_multiplication(H_matrix, pred_state));
-          return matrix_addition(pred_state, matrix_multiplication(kal_gain, result));
-        }
-        
-      vector<vector<double>> compute_error_covariance(vector<vector<double>> pred_co, vector<vector<double>> kal_gain){
-          vector<vector<double>> result = matrix_multiplication(kal_gain, H_matrix);
-          return subtractMat(pred_co, matrix_multiplication(result, pred_co));
+      void updateMeasurement(){
+          
       }
 
-      vector<vector<double>> run_kalman_filter_estimate(vector<vector<double>> err_co_estimate, 
-          vector<vector<double>> state_0, vector<vector<double>> measurement){
-          vector<vector<double>> predicted_state = predict_state(state_0);
-          vector<vector<double>> predicted_err_co = predict_error_covariance(err_co_estimate);
-          vector<vector<double>> kal_gain = kalman_gain(predicted_err_co);
-          vector<vector<double>> est_state = estimate(kal_gain, predicted_state, measurement);
-          vector<vector<double>> comp_err_co = compute_error_covariance(predicted_err_co, kal_gain);
-          return est_state;
+      void updateState_and_Covar(){
+          KalmanFilter myObj = KalmanFilter(A, H, Q, R);
+          state = myObj.run_kalman_filter_estimate(covar_est, state, measurement);
+          covar = myObj.run_kalman_filter_covar(covar, state, measurement);
       }
 
-      vector<vector<double>> run_kalman_filter_covar(vector<vector<double>> err_co_estimate, 
-        vector<vector<double>> state_0, vector<vector<double>> measurement){
-        vector<vector<double>> predicted_state = predict_state(state_0);
-        vector<vector<double>> predicted_err_co = predict_error_covariance(err_co_estimate);
-        vector<vector<double>> kal_gain = kalman_gain(predicted_err_co);
-        vector<vector<double>> comp_err_co = compute_error_covariance(predicted_err_co, kal_gain);
-        return comp_err_co;
-    }
-};
+      
 
+
+  
+}
 double constant_alpha(double velocity, double altitude){
     // These constants are good
     double pi = 3.1415926535897932384626433832795028841971693993751058209749;

@@ -287,7 +287,7 @@ class runKalmanFilter {
                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0},
                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0},
                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}};
-      vector<vector<double>> R = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+      vector<vector<double>> R_matrix = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                             {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                             {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                             {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
@@ -313,17 +313,32 @@ class runKalmanFilter {
                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0},
                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0},
                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}};
-        double velocity;
-        double altitude;
-        double alpha = 0;
-        double alpha_prev;
-        double velocity;
-        double altitude;
-        double phi;
-        double theta;
-        double gamma;
-        vector<vector<double>> A(18, vector<double>(18,1));
-        vector<vector<double>> state = {{0},
+      double velocity = 0;
+      double altitude = 0;
+      double alpha = 0;
+      double alpha_prev = 0;
+      double phi = 0;
+      double theta = 0;
+      double gamma = 0;
+      vector<vector<double>> A_matrix = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                            {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                            {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                            {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                            {0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                            {0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0},
+                            {0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0},
+                            {0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0},
+                            {0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0},
+                            {0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0},
+                            {0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0},
+                            {0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0},
+                            {0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0},
+                            {0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0},
+                            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0},
+                            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0},
+                            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0},
+                            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}};
+      vector<vector<double>> state = {{0},
                                     {0},
                                     {0},
                                     {0},
@@ -342,7 +357,7 @@ class runKalmanFilter {
                                     {0},
                                     {0},
                                     {0}};
-          vector<vector<double>> covar = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+      vector<vector<double>> covar = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                     {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                     {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                     {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
@@ -360,7 +375,34 @@ class runKalmanFilter {
                                     {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0},
                                     {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0},
                                     {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}};
-          vector<vector<double>> measurement(26, vector<double>(1,1));
+      vector<vector<double>> measurement = {{0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0},
+                                            {0}};
 
       runKalmanFilter(){}
       ~runKalmanFilter(){}
@@ -379,7 +421,7 @@ class runKalmanFilter {
       };
 
       void updateStateTransition(){
-          A = state_transition(alpha, alpha_prev, theta, phi, gamma);
+          A_matrix = state_transition(alpha, alpha_prev, theta, phi, gamma);
       }
 
       void updateMeasurement(){
@@ -387,16 +429,13 @@ class runKalmanFilter {
       }
 
       void updateState_and_Covar(){
-          KalmanFilter myObj = KalmanFilter(A, H, Q, R);
-          state = myObj.run_kalman_filter_estimate(covar_est, state, measurement);
+          KalmanFilter myObj = KalmanFilter(A_matrix, H_matrix, Q_matrix, R_matrix);
+          state = myObj.run_kalman_filter_estimate(covar, state, measurement);
           covar = myObj.run_kalman_filter_covar(covar, state, measurement);
       }
-
-      
-
-
   
-}
+};
+
 double constant_alpha(double velocity, double altitude){
     // These constants are good
     double pi = 3.1415926535897932384626433832795028841971693993751058209749;

@@ -432,8 +432,6 @@ class runKalmanFilter {
                                             {0},
                                             {0},
                                             {0},
-                                            {0},
-                                            {0},
                                             {0}};
 
       runKalmanFilter(){}
@@ -502,18 +500,16 @@ class runKalmanFilter {
                         {ax3},
                         {ay3},
                         {az3},
-                        {0},
-                        {0},
-                        {0},
-                        {0},
-                        {0},
-                        {0},
-                        {0},
-                        {0},
-                                            {0},
-                                            {0},
-                                            {0},
-                                            {0}};
+                        {gx1},
+                        {gy1},
+                        {gz1},
+                        {gx2},
+                        {gy2},
+                        {gz2},
+                        {a},
+                        {b},
+                        {c},
+                        {d}};
       }
 
       void updateState_and_Covar(){

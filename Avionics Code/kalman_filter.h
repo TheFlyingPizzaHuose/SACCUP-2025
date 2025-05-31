@@ -313,102 +313,67 @@ class runKalmanFilter {
                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0},
                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0},
                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}};
-      double velocity = 0;
-      double altitude = 0;
-      double pressure1 = 0;
-      double pressure2 = 0;
-      double alpha = 0;
-      double alpha_prev = 0;
-      double phi = 0;
-      double theta = 0;
-      double gamma = 0;
-      double lat = 0;
-      double lon = 0;
-      double altitude_1 = 0;
-      double alttiude_2 = 0;
-      double vx = 0;
-      double vy = 0;
-      double vz = 0;
-      double ax1 = 0;
-      double ay1 = 0;
-      double az1 = 0;
-      double ax2 = 0;
-      double ay2 = 0;
-      double az2 = 0;
-      double ax3 = 0;
-      double ay3 = 0;
-      double az3 = 0;
-      double gx1 = 0;
-      double gy1 = 0;
-      double gz1 = 0;
-      double gx2 = 0;
-      double gy2 = 0;
-      double gz2 = 0;
-      double a = 0;
-      double b = 0;
-      double c = 0;
-      double d = 0;
-      double MX = 0;
-      double MY = 0;
-      double MZ = 0;
-
+      double x, y, z, vx, vy, vz, ax, ay, az, gx, gy, gz, a, b, c, d, alpha_phi, alpha_gamma;
+      double lat, lon, altitude_1, altitude_2, altitude_3, ax1, ay1, az1, ax2, ay2, az2, ax3, ay3, az3,
+             gx1, gy1, gz1, gx2, gy2, gz3, alpha;
+      double state_var[18] = {lat, lon, altitude_1, altitude_2, altitude_3, ax1, ay1, az1, ax2, ay2, az2, ax3, ay3, az3,
+             gx1, gy1, gz1, gx2, gy2, gz3, alpha};
+      
       vector<vector<double>> A_matrix = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                            {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                            {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                            {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                            {0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                            {0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0},
-                            {0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0},
-                            {0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0},
-                            {0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0},
-                            {0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0},
-                            {0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0},
-                            {0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0},
-                            {0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0},
-                            {0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0},
-                            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0},
-                            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0},
-                            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0},
-                            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}};
+                                         {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}};
       vector<vector<double>> state = {{0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0},
-                                    {0}};
+                                      {0},
+                                      {0},
+                                      {0},
+                                      {0},
+                                      {0},
+                                      {0},
+                                      {0},
+                                      {0},
+                                      {0},
+                                      {0},
+                                      {0},
+                                      {0},
+                                      {0},
+                                      {0},
+                                      {0},
+                                      {0},
+                                      {0}};
       vector<vector<double>> covar = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                    {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                    {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                    {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                    {0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                    {0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0},
-                                    {0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0},
-                                    {0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0},
-                                    {0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0},
-                                    {0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0},
-                                    {0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0},
-                                    {0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0},
-                                    {0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0},
-                                    {0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0},
-                                    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0},
-                                    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0},
-                                    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0},
-                                    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}};
+                                      {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                      {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                      {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                      {0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                      {0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0},
+                                      {0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0},
+                                      {0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0},
+                                      {0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0},
+                                      {0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0},
+                                      {0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0},
+                                      {0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0},
+                                      {0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0},
+                                      {0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0},
+                                      {0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0},
+                                      {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0},
+                                      {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0},
+                                      {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}};
       vector<vector<double>> measurement = {{0},
-                                            {0},
                                             {0},
                                             {0},
                                             {0},
@@ -441,15 +406,12 @@ class runKalmanFilter {
                       double MPU_AX, double MPU_AY, double MPU_AZ, double LSM_AX, 
                       double LSM_AY, double LSM_AZ, double ADXL345_AX, double ADXL345_AY, 
                       double ADXL345_AZ, double LSM_GX, double LSM_GY,double LSM_GZ, 
-                      double MPU_GX, doube MPU_GY, double MPU_GZ, double LSM_MX, 
-                      double LSM_MY, double LSM_MZ){
+                      double MPU_GX, doube MPU_GY, double MPU_GZ, double alt1, double alt2, double alt3, double alpha){
           lat = GPS_LAT;
           lon = GPS_LON;
-          altitude_1 = 0;
-          altitude_2 = 0;
-          vx = 0;
-          vy = 0;
-          vz = 0;
+          altitude_1 = alt1;
+          altitude_2 = alt2;
+          altitude_3 = alt3;
           ax1 = MPU_AX;
           ay1 = MPU_AY;
           az1 = MPU_AZ;
@@ -465,19 +427,9 @@ class runKalmanFilter {
           gx2 = MPU_GX;
           gy2 = MPU_GY;
           gz2 = MPU_GZ;
-          theta = LSM_MX * 0.1 + integrated_gyro * 0.9;
-          phi = LSM_MY * 0.1 + integrated_gyro * 0.9;
-          gamma = LSM_MZ * 0.1 + integrated_gyro * 0.9;
-          a = cos(theta/2) * cos(phi/2) * cos(gamma / 2) + sin(theta / 2) * sin (phi / 2) * sin(gamma / 2);
-          b = sin(theta/2) * cos(phi / 2) * cos(gamma / 2) - cos(theta / 2) * sin(phi/2) * sin(gamma/2);
-          c = cos(theta/2)*sin(phi/2) * cos(gamma / 2) + sin(theta / 2) * cos(phi / 2) * sin(gamma / 2);
-          d = cos(theta / 2) * cos(phi / 2) * sin(gamma / 2) - sin(theta/2) * sin(phi/2) * cos(gamma/2);
+          alpha = constant_alpha(velocity, state[2][0]);
       };
 
-      void updateAlpha(){
-          alpha_prev = alpha;
-          alpha = constant_alpha(velocity, altitude);
-      };
 
       void updateStateTransition(){
           A_matrix = state_transition(alpha, alpha_prev, theta, phi, gamma);
@@ -488,9 +440,7 @@ class runKalmanFilter {
                         {lon},
                         {altitude_1},
                         {altitude_2},
-                        {vx},
-                        {vy},                         
-                        {vz},
+                        {altitude_3},
                         {ax1},
                         {ay1},
                         {az1},
@@ -506,16 +456,17 @@ class runKalmanFilter {
                         {gx2},
                         {gy2},
                         {gz2},
-                        {a},
-                        {b},
-                        {c},
-                        {d}};
+                        {alpha_phi},
+                        {alpha_gamma}};
       }
 
       void updateState_and_Covar(){
           KalmanFilter myObj = KalmanFilter(A_matrix, H_matrix, Q_matrix, R_matrix);
           state = myObj.run_kalman_filter_estimate(covar, state, measurement);
           covar = myObj.run_kalman_filter_covar(covar, state, measurement);
+          for (int i = 0; i < 18; i++){
+            
+          };
       }
   
 };
@@ -595,35 +546,30 @@ double constant_alpha(double velocity, double altitude){
 
 }
 
-vector<vector<double>> state_transition(double alpha, double alpha_prev, double theta, double phi, double gamma){
-    double alpha = cos(theta/2) * cos(phi/2) * cos(gamma / 2) + sin(theta / 2) * sin (phi / 2) * sin(gamma / 2);
-    double beta = sin(theta/2) * cos(phi / 2) * cos(gamma / 2) - cos(theta / 2) * sin(phi/2) * sin(gamma/2);
-    double gamma = cos(theta/2)*sin(phi/2) * cos(gamma / 2) + sin(theta / 2) * cos(phi / 2) * sin(gamma / 2);
-    double delta = cos(theta / 2) * cos(phi / 2) * sin(gamma / 2) - sin(theta/2) * sin(phi/2) * cos(gamma/2);
+vector<vector<double>> state_transition(gx, gy, gz){
+
     double dt = 0.001;
-
-    
-    vector<vector<double>> A = {{1, 0, 0, dt, 0, 0, (1/2) * pow(dt,2), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0},
-                                {0, 1, 0, 0, dt, 0, 0, (1/2) * pow(dt,2), 0, 0, 0, 0, 0, 0, 0, 0, 0,  0},
-                                {0, 0, 1, 0, 0, dt, 0, 0, (1/2) * pow(dt,2), 0, 0, 0, 0, 0, 0, 0, 0,  0},
-                                {0, 0, 0, 1, 0, 0, dt, 0, 0,                 0, 0, 0, 0, 0, 0, 0, 0,  0},
-                                {0, 0, 0, 0, 1, 0, 0, dt,    0,              0, 0, 0, 0, 0, 0, 0, 0,  0},
-                                {0, 0, 0, 0, 0, 1, 0, 0, dt,    0,              0, 0, 0, 0, 0, 0, 0,  0},
-                                {0, 0, 0, 0, 0, 0, 1, 0,  0,    0,              0, 0, 0, 0, 0, 0, 0,  0},
-                                {0, 0, 0, 0, 0, 0, 0, 1,  0, 0,    0,              0, 0, 0, 0, 0, 0,  0},
-                                {0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,                  0, 0, 0, 0, 0, 0,  0},
-                                {0, 0, 0, 0, 0, 0, 0, 0, 0, alpha,              0, 0, 0, 0, 0, 0, 0,  0},         
-                                {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, beta,               0, 0, 0, 0, 0, 0,  0},
-                                {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, gamma,              0, 0, 0, 0, 0,  0},
-                                {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, delta,              0, 0, 0, 0,  0},
-                                {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0,                1, 0, 0, 0,  0},
-                                {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0,               0, 1, 0, dt,  0},
-                                {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0,               0, 0, 1, 0,  dt},
-                                {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0,  alpha/alpha_prev, 0},
-                                {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, alpha/ alpha_prev}};
-
-    
-
+    double a = (1/2) * pow(dt,2);
+    double t = dt / 2;
+    double w1 = gx * t
+    double w2 = gy * t;
+    double w3 = gz * t;
+  
+    vector<vector<double>> A = {{1, 0, 0, dt, 0, 0,  a,  0,   0,   0,  0,   0,   0,   0,  0},
+                                {0, 1, 0, 0, dt, 0,  0,  a,   0,   0,  0,   0,   0,   0,  0},
+                                {0, 0, 1, 0, 0,  dt, 0,  0,   a,   0,  0,   0,   0,   0,  0},
+                                {0, 0, 0, 1, 0,  0,  dt, 0,   0,   0,  0,   0,   0,   0,  0},
+                                {0, 0, 0, 0, 1,  0,  0,  dt,  0,   0,  0,   0,   0,   0,  0},
+                                {0, 0, 0, 0, 0,  1,  0,  0,   dt,  0,  0,   0,   0,   0,  0},
+                                {0, 0, 0, 0, 0,  0,  1,  0,   0,   0,  0,   0,   0,   0,  0},
+                                {0, 0, 0, 0, 0,  0,  0,  1,   0,   0,  0,   0,   0,   dt, 0},
+                                {0, 0, 0, 0, 0,  0,  0,  0,   1,   0,  0,   0,   0,   0,  dt},
+                                {0, 0, 0, 0, 0,  0,  0,  0,   0,   t,  -w1, -w2, -w3, 0,  0},         
+                                {0, 0, 0, 0, 0,  0,  0,  0,   0,   w1, t,   w3,  w2,  0,  0},
+                                {0, 0, 0, 0, 0,  0,  0,  0,   0,   w2, -w3, t,   w1,  0,  0},
+                                {0, 0, 0, 0, 0,  0,  0,  0,   0,   w3, -w2, -w1, t,   0,  0},
+                                {0, 0, 0, 0, 0,  0,  0,  -dt, 0,   0,  0, 0, 0,  0,   1,  0},
+                                {0, 0, 0, 0, 0,  0,  0,  0,   -dt, 0,  0, 0, 0,  0,   0,  1}};
     return A;
 }
 

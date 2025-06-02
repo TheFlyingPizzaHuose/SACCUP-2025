@@ -176,7 +176,7 @@ uint BMP280_RATE = 5500,  //Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5
      MPU6050_RATE = 125,
      BMP180_RATE = 5500,  //Ultra low: 3, Standard: 5, High: 9, Ultra High: 17, Adv. High: 51
      AS5600_RATE = 150,
-     RFD_RATE = 125,
+     RFD_RATE = 44983, //Prime number near 45ms
      RFM_RATE = 50000,
      LSM_RATE = 1500,
      ADXL345_RATE = 350,
@@ -318,8 +318,16 @@ void loop() {
       SD_LAST = 0;
       STATUS_LAST = 0;
     }
-
+    
+    //Kalman Filter
+    alpha = constant_alpha(velocity)
+    vector<vector<double>> A = state_transition(alpha, alpha_prev, theta, phi, gamma);
+    KalmanFilter myObj = KalmanFilter(A, H, Q, R);
+    state_est = myObj.run_kalman_filter_estimate(covar_est, state_est, measurement);
+    covar_est = myObj.run_kalman_filter_covar(covar_est, state_est, measurement);
+    alpha_prev = alpha;
     readRFD();
+    readRFM();
     //At each sample, this also checks if the sensor has failed.
     time_since_launch = micros() / 1000000 - time_launch;
     static char gps_msg[200] = {};
@@ -417,6 +425,7 @@ void loop() {
   } else {  //Recovery Mode
     dynamicStart();
     readRFD();
+    readRFM();
     sendRFD();
     sendRFM();
   }
@@ -425,6 +434,7 @@ void loop() {
     RFD_RATE = 1000000;
     sendRFD();
     sendRFM();
+    readRFM();
     readRFD();
   }else{  
     RFD_RATE = 125;
@@ -458,13 +468,6 @@ void loop() {
     rfSerial.print('L');
     STATUS_LAST = micros();
   }
-  //Kalman Filter
-  alpha = constant_alpha(velocity)
-  vector<vector<double>> A = state_transition(alpha, alpha_prev, theta, phi, gamma);
-  KalmanFilter myObj = KalmanFilter(A, H, Q, R);
-  state_est = myObj.run_kalman_filter_estimate(covar_est, state_est, measurement);
-  covar_est = myObj.run_kalman_filter_covar(covar_est, state_est, measurement);
-  alpha_prev = alpha;
   
 }
 
@@ -936,6 +939,18 @@ void sendRFD() {
     RFD_LAST = micros();
     //printRTC();
     //printErr();
+  }
+}
+void readRFM() {
+  if (!errorCodes[RFM9X_FAIL] && rf95.available()) {
+    // Should be a message for us now
+    uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+    uint8_t len = sizeof(buf);
+
+    if (rf95.recv(buf, &len)) {
+      Serial.println(buf[0]);
+      commands(buf[0]);
+    }
   }
 }
 void sendRFM() {

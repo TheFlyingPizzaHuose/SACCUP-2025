@@ -10,6 +10,9 @@ is used in this program such as libraries.
 
 Avionics Datasheet
 https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/edit
+
+Callibration spreadsheet
+https://docs.google.com/spreadsheets/d/1Gov30G9uyXv7lDdadh1TLPG05m9mBo-JQmem5j_yBDY/edit?usp=sharing
 */
 #include <SoftwareSerial.h>    // UART Library
 #include <Wire.h>              // I2C library
@@ -55,7 +58,7 @@ RH_RF95 rf95(RFM95_CS, RFM95_INT);
 const int RFM9X_PWR = 23;
 int16_t packetnum = 0;  // packet counter, we increment per xmission
 
-
+const bool callibration_mode = 0;
 const bool debug = 0;
 
 //pin assignments
@@ -167,7 +170,9 @@ const int PRGM_ERR = 0,
           RFM9X_FAIL = 26,
           ADXL375_FAIL = 27,
           LSM9SD1_FAIL = 28,
-          INA219_FAIL = 29;
+          INA219_FAIL = 29,
+          ACCEL_CALLIB = 30,
+          MAG_CALLIB = 31;
 
 // Kalman Filter initialization (To be changed)
 
@@ -356,9 +361,9 @@ void loop() {
     readRFD();
     readRFM();
     //At each sample, this also checks if the sensor has failed.
-    Serial.print(BMP280_ALT); Serial.print('|');
-    Serial.print(BMP180_1_ALT); Serial.print('|');
-    Serial.print(BMP180_2_ALT); Serial.println();
+    //Serial.print(BMP280_ALT); Serial.print('|');
+    //Serial.print(BMP180_1_ALT); Serial.print('|');
+    //Serial.print(BMP180_2_ALT); Serial.println();
     time_since_launch = micros() / 1000000 - time_launch;
     static char gps_msg[200] = {};
     static int gps_msg_index = 0;
@@ -1226,7 +1231,7 @@ void setupMPU6050(){
   mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);//Options 260/184/94/44/21/10/5
   mpu.setSampleRateDivisor(0); // Divides Gyro output rate by (Sample divisor + 1) to get sample rate
 }
-void acc_start_samples(float* vals, bool reset = 0){//This function was moved up here because it needs to be in-context of loop() since it takes in input
+void find_down(float* vals, bool reset = 0){//This function was moved up here because it needs to be in-context of loop() since it takes in input
   static int count = 0;
   static float average[3] = {0,0,9.8};
   static int start_time = 0;
@@ -1248,13 +1253,13 @@ void acc_start_samples(float* vals, bool reset = 0){//This function was moved up
 void readMPU6050(){    //Elizabeth McGhee
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
-
-  MPU_AX = a.acceleration.x;
-  MPU_AY = a.acceleration.y;
-  MPU_AZ = a.acceleration.z;
-  MPU_GX = g.gyro.x;
+  //Callibrated
+  MPU_AX = a.acceleration.x + 0.6163405527;
+  MPU_AY = a.acceleration.y - 0.02601792382;
+  MPU_AZ = a.acceleration.z - 0.7746213592;
+  MPU_GX = g.gyro.x + 0.05;
   MPU_GY = g.gyro.y;
-  MPU_GZ = g.gyro.z;
+  MPU_GZ = g.gyro.z - 0.02;
 
   if(!errorCodes[SD_FAIL]){
     logfile.print(micros());
@@ -1264,20 +1269,24 @@ void readMPU6050(){    //Elizabeth McGhee
     logfile.print(MPU_AZ);logfile.print('|');
     logfile.print(MPU_GX);logfile.print('|');
     logfile.print(MPU_GY);logfile.print('|');
-    logfile.print(MPU_GZ);logfile.print('|');
+    logfile.println(MPU_GZ);
   }
 }
 void readLSM() {  //Alleon Oxales
   //Read sensor data
   lsm.read();
-  lsm.getEvent(&LSM_acc, &LSM_gyro, &LSM_mag, &LSM_temp);
+  lsm.getEvent(&LSM_acc, &LSM_mag, &LSM_gyro, &LSM_temp);
+  //Callibrated
+  LSM_AX = -LSM_acc.acceleration.y + 0.4984510829;
+  LSM_AY = -LSM_acc.acceleration.x - 0.5102867812;
+  LSM_AZ = LSM_acc.acceleration.z + 0.2804271845;
 
-  LSM_AX = -LSM_acc.acceleration.y;
-  LSM_AY = -LSM_acc.acceleration.x;
-  LSM_AZ = LSM_acc.acceleration.z;
-  LSM_GX = -LSM_gyro.gyro.y;
-  LSM_GY = -LSM_gyro.gyro.x;
-  LSM_GZ = LSM_gyro.gyro.z;
+  float temp[] = {LSM_AX,LSM_AY,LSM_AZ};
+  find_down(temp);//Using acceleration of gravity at the pad to determine orientation
+
+  LSM_GX = -LSM_gyro.gyro.y - 0.000337512054;
+  LSM_GY = -LSM_gyro.gyro.x + 0.02429604629;
+  LSM_GZ = LSM_gyro.gyro.z + 0.02113307618;
   LSM_MX = -LSM_mag.magnetic.y;
   LSM_MY = -LSM_mag.magnetic.x;
   LSM_MZ = LSM_mag.magnetic.z;
@@ -1326,10 +1335,10 @@ void readADXL() {
   sensors_event_t event;
   adxl.getEvent(&event);
 
-  /* Display the results (acceleration is measured in m/s^2) */
-  ADXL345_AX = -event.acceleration.x;
-  ADXL345_AY = -event.acceleration.y;
-  ADXL345_AZ = event.acceleration.z;
+  /* Display the results (acceleration is measured in m/s^2) with callibration */
+  ADXL345_AX = -event.acceleration.x + 7.497139656;
+  ADXL345_AY = -event.acceleration.y + 7.772019417;
+  ADXL345_AZ = event.acceleration.z - 1.129876027;
 
   if(!errorCodes[SD_FAIL]){
     logfile.print(micros());
@@ -1360,6 +1369,23 @@ int readRawAngle(TwoWire* wire) {  //Ryan Santiago
     return -1;
   }
 }  //end readRawAngle
+void mag_apply_calibrat(float* vals){//Based on matlab callibration values
+  static const float A[3][3] = {
+    {0,0,0},
+    {0,0,0},
+    {0,0,0}
+  };
+  static const float B[3] = {0,0,0};
+  for(int i = 0; i < 3; i++){vals[i]-=B[i];}//Do offset before matrix multiplication
+  // Multiply: temp * A
+  float result[3] = {0,0,0};
+  for (int i = 0; i < 3; i++) {
+    for (int j = 0; j < 3; j++) {
+        result[i] += vals[j] * A[j][i];
+    }
+  }
+  vals = result;
+}
 //==============================
 
 void setErr(int errorCode) {
@@ -1435,15 +1461,18 @@ void commands(char command) {  //Alleon Oxales
       break;
     }
     case 0x07:
-      pres_start_samples(0,1);//Resets sample timer to start taking samples
-      AoA_start1 = readRawAngle(&Wire);//sets zero for angle of attack sensors
-      AoA_start2 = readRawAngle(&Wire1);//sets zero for angle of attack sensors
-      if(!errorCodes[SD_FAIL]){
-        logfile.print(micros());
-        logfile.print("|AoA_Callib|");
-        logfile.print(AoA_start1);
-        logfile.print('|');
-        logfile.println(AoA_start2);
+      if(!my_event_arr[0]){//Prevent navigation alignment during flight
+        pres_start_samples(0,1);//Resets sample timer to start taking samples
+        AoA_start1 = readRawAngle(&Wire);//sets zero for angle of attack sensors
+        AoA_start2 = readRawAngle(&Wire1);//sets zero for angle of attack sensors
+        if(!errorCodes[SD_FAIL]){
+          logfile.print(micros());
+          logfile.print("|AoA_Callib|");
+          logfile.print(AoA_start1);
+          logfile.print('|');
+          logfile.println(AoA_start2);
+        }
+        find_down(0,1);
       }
       break;
     case 0x08:

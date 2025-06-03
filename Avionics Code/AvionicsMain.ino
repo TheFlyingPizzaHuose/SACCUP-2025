@@ -28,6 +28,7 @@ https://docs.google.com/document/d/138thbxfGMeEBTT3EnloltKJFaDe_KyHiZ9rNmOWPk2o/
 #include <EEPROM.h>
 #include <uRTCLib.h>  //Include Real Time Clock Library
 #include <time.h>
+//#include "kalman_filter.h"
 
 uRTCLib rtc(0x68);  //Real time clock I2C address
 char daysOfTheWeek[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
@@ -108,6 +109,7 @@ uint gps_sats = 0;
 uint glonas_sats = 0;
 uint gallileo_sats = 0;
 byte setGSV_ON[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00}; //Left here so that it's checksum can be calculated during start
+byte setGSV_OFF[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x39 };
 
 // AV Modes
 bool lowPower = 0;
@@ -206,6 +208,9 @@ float time_since_launch = 0;
 
 //Start Variables
 float pos_start[3] = {0, 0, 0};
+float rot_start[3] = {0, 0, 0}; //Yaw, Pitch, Roll with front facing up
+float press_start = 101325;
+int AoA_start1 = 0, AoA_start2 = 0;
 
 
 //Telemetry Variables
@@ -216,7 +221,7 @@ float orientationX = 0,     //degrees
 
 //Sensor Data
 float BMP280_PRESS = 0,
-      BMP280_altitude = 0,
+      BMP280_ALT = 0,
       GPS_LAT = 0,
       GPS_LON = 0,
       MPU_AX = 0,
@@ -227,8 +232,8 @@ float BMP280_PRESS = 0,
       MPU_GZ = 0,
       BMP180_1_PRESS = 0,
       BMP180_2_PRESS = 0,
-      BMP180_1_altitude = 0,
-      BMP180_1_altitude = 0,
+      BMP180_1_ALT = 0,
+      BMP180_2_ALT = 0,
       AS5600_1_ANG = 0,
       AS5600_2_ANG = 0,
       ADXL345_AX = 0,
@@ -244,7 +249,11 @@ float BMP280_PRESS = 0,
       LSM_MY = 0,
       LSM_MZ = 0;
 
-
+//Kalman variables
+double alpha;
+//vector<vector<double>> state_est;
+//vector<vector<double>> covar_est;
+double alpha_prev;
 //Kinematics variables
 float latitude = 0,         //degrees,minutes,seconds,arcseconds
       longitude = 0;        //degrees,minutes,seconds,arcseconds
@@ -298,6 +307,24 @@ void setup() {
     setErr(INA219_FAIL);
   }
   //gpsChecksum(poll_interfere, sizeof(poll_interfere));
+  gpsChecksum(setGSV_ON, sizeof(setGSV_ON));
+}
+
+void pres_start_samples(float pres, bool reset = 0){//This function was moved up here because it needs to be in-context of loop() since it takes in input
+  static int count = 0;
+  static float average = 101325;
+  static int start_time = 0;
+  if(reset){
+    count = 0;
+    average = 101325;
+    start_time = millis();
+  }else if(millis()-start_time < 1000){//Only sample for 1000ms
+    average = (average*count + pres)/(count+1);
+    Serial.println(average);
+    count++;
+  }else{
+    press_start = average;
+  }
 }
 
 byte last_gps_byte = 0;
@@ -320,15 +347,18 @@ void loop() {
     }
     
     //Kalman Filter
-    alpha = constant_alpha(velocity)
-    vector<vector<double>> A = state_transition(alpha, alpha_prev, theta, phi, gamma);
-    KalmanFilter myObj = KalmanFilter(A, H, Q, R);
-    state_est = myObj.run_kalman_filter_estimate(covar_est, state_est, measurement);
-    covar_est = myObj.run_kalman_filter_covar(covar_est, state_est, measurement);
-    alpha_prev = alpha;
+    //alpha = constant_alpha(velocity)
+    //vector<vector<double>> A = state_transition(alpha, alpha_prev, theta, phi, gamma);
+    //KalmanFilter myObj = KalmanFilter(A, H, Q, R);
+    //state_est = myObj.run_kalman_filter_estimate(covar_est, state_est, measurement);
+    //covar_est = myObj.run_kalman_filter_covar(covar_est, state_est, measurement);
+    //alpha_prev = alpha;
     readRFD();
     readRFM();
     //At each sample, this also checks if the sensor has failed.
+    Serial.print(BMP280_ALT); Serial.print('|');
+    Serial.print(BMP180_1_ALT); Serial.print('|');
+    Serial.print(BMP180_2_ALT); Serial.println();
     time_since_launch = micros() / 1000000 - time_launch;
     static char gps_msg[200] = {};
     static int gps_msg_index = 0;
@@ -349,8 +379,8 @@ void loop() {
       //Serial.println(micros() - temp);
     }else{
       if (micros() - AS5600_LAST > AS5600_RATE) {
-        AS5600_1_ANG = readRawAngle(&Wire);
-        AS5600_2_ANG = readRawAngle(&Wire1);
+        AS5600_1_ANG = readRawAngle(&Wire) - AoA_start2;
+        AS5600_2_ANG = readRawAngle(&Wire1) - AoA_start2;
         if (AS5600_1_ANG < 0) {
           setErr(AS5600_1_FAIL);
         } else {
@@ -378,6 +408,10 @@ void loop() {
           logfile.print("|1|");
           logfile.println(BMP280_PRESS);
         }
+        float temp = bmpAplyCalibrat(0, BMP280_PRESS);
+        pres_start_samples(temp, 0);
+        BMP280_ALT = alt_from_pres(temp);//Adjust BMP pressure based on callibration after recording
+
       }
       if (micros() - BMP180_LAST > BMP180_RATE) {
         if(!errorCodes[BMP180_1_FAIL]){
@@ -397,6 +431,8 @@ void loop() {
           logfile.print('|');
           logfile.println(BMP180_2_PRESS);
         }
+        BMP180_1_ALT = alt_from_pres(bmpAplyCalibrat(1, BMP180_1_PRESS));//Adjust BMP pressure based on callibration after recording
+        BMP180_2_ALT = alt_from_pres(bmpAplyCalibrat(2, BMP180_2_PRESS));
       }
       if (micros() - MPU6050_LAST > MPU6050_RATE && !errorCodes[MPU6050_FAIL]) {
         readMPU6050();
@@ -410,7 +446,7 @@ void loop() {
         readADXL();
         ADXL345_LAST = micros();
       }
-      if (micros() - SD_LAST> SD_RATE){
+      if (micros() - SD_LAST> SD_RATE && !errorCodes[SD_FAIL]){
         logfile.flush();
       }
     }
@@ -419,7 +455,7 @@ void loop() {
     if(my_event_arr[0]){//Launch event autotriggers
       lowPower = 0;
       videoPower = 1;
-      //gpsSet(setGSV_OFF, sizeof(setGSV_OFF));
+      gpsSet(setGSV_OFF, sizeof(setGSV_OFF));
       pwr_gps_status_poll = 0;
     }
   } else {  //Recovery Mode
@@ -496,7 +532,6 @@ void normalStart() {
   logfile.println("TIME(us), Data ID, Data");  // write header at top of log file
   logfile.println("Data IDs, 0: GPS, 1: BMP280, 2: BMP180 1&2, 3: MPU6050, 4: LSM9DS1, 5: ADXL375, 6: AS5600 1&2");  // write header at top of log file
   logfile.flush();
-  gpsChecksum(setGSV_ON, sizeof(setGSV_ON));
 }
 //Generate the configuration string for Factory Default Settings
 byte setDefaults[] = { 0xB5, 0x62, 0x06, 0x09, 0x0D, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x17, 0x2F, 0xAE };
@@ -517,7 +552,6 @@ byte setNav[] = { 0xB5, 0x62, 0x06, 0x24, 0x24, 0x00, 0xFF, 0xFF, 0x08, 0x03, 0x
 //Generate the configuration string for NMEA messages
 byte setGLL[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x2B };
 byte setGSA[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x31 };
-byte setGSV_OFF[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x39 };
 byte setVTG[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x46 };
 byte setGGA[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x23 };
 byte set4_1[] = { 0xB5, 0x62, 0x06, 0x17, 0x14, 0x00, 0x00, 0x41, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0x57 };
@@ -852,7 +886,7 @@ void parseGPS(char* msg, byte size) {  //Alleon Oxales
           case 1: break;   //msgNum
           case 2:{ //numSV
             uint exp = 1;
-            for(int i = 0; i < item_length; i++){
+            for(uint i = 0; i < item_length; i++){
               sat_count += (item[item_length-i-1] - '0')*exp;
               exp *= 10;
             }
@@ -955,7 +989,7 @@ void readRFM() {
 }
 void sendRFM() {
   if ((micros() - RFM_LAST > RFM_RATE) && !errorCodes[RFM9X_FAIL]) {
-    uint8_t* massage = readyPacket();
+    uint8_t* massage = reinterpret_cast<uint8_t*>(readyPacket());
     //itoa(packetnum++, radiopacket+13, 10);
     //Serial.print("Sending "); Serial.println(radiopacket);
     //radiopacket[19] = 0;
@@ -984,7 +1018,7 @@ char* readyPacket() {  //Leiana Mendoza -
       float datum = 0;
       switch (i) {
         case 0: datum = time_since_launch; break;
-        case 2: datum = position[2] - pos_start[2]; break;
+        case 2: datum = BMP280_ALT; break;
         case 3: datum = position[1]; break;
         case 4: datum = position[0]; break;
         case 5: datum = sqrt(velocity[0] * velocity[0] + velocity[1] * velocity[1] + velocity[2] * velocity[2]); break;
@@ -1028,8 +1062,14 @@ char* readyPacket() {  //Leiana Mendoza -
   }
   return charArray;
 }  //end readyPacket
-byte radioChecksum(int* radioMSG, byte msgLength) {
-  return '_';
+byte radioChecksum(int* radioMSG, byte msgLength) {//fletcher 8 checksum algorithm
+  byte sum1 = 0;
+  byte sum2 = 0;
+  for (size_t i = 0; i < msgLength; i++) {
+      sum1 = (sum1 + radioMSG[i]) % 15;
+      sum2 = (sum2 + sum1) % 15;
+  }
+  return (sum2 << 4) | sum1;
 }  //end radioChecksum
 int* dec_to_binary(float my_dec, int my_bit) {  //Ellie McGhee, Returns elements in reverse order
   int my_dec_int = static_cast<int>(round(my_dec));
@@ -1053,7 +1093,7 @@ int* dec_to_binary(float my_dec, int my_bit) {  //Ellie McGhee, Returns elements
 }  //end dec_to_binary
 int* float_to_binary(float num) {//Aleon Oxales
   static int bit_array[32] = {};
-  int *int_repr = reinterpret_cast<uint32_t *>(&num);
+  uint32_t *int_repr = reinterpret_cast<uint32_t *>(&num);
 
   // Extract individual bits
   for (int i = 31; i >= 0; i--) {
@@ -1150,6 +1190,20 @@ bool detect_good_shutdown() {  //Alleon Oxales
 //========================================
 
 //=========SENSOR CODE==========
+float bmpAplyCalibrat(int sensor_id, float val){
+  switch (sensor_id){
+    case 0:
+      return val+1592.34+(val-99830)*0.49;
+    case 1:
+      return val-14377+(val-115800)*(-0.14);
+    case 2:
+      return val-23577+(val-125000)*(-0.14);
+  }
+  return 0;
+}
+float alt_from_pres(float val){
+  return 44330.0*(1-pow(press_start/val,0.1903)); //Based on Adafruit_BMP_085_Unified
+}
 void TCA9548A(uint8_t bus) {     // Select I2C Bus On I2C Multiplexer (if used)
   Wire.beginTransmission(0x70);  // TCA9548A address
   Wire.write(1 << bus);          // send byte to select bus
@@ -1171,6 +1225,25 @@ void setupMPU6050(){
   mpu.setGyroRange(MPU6050_RANGE_500_DEG);//Options 250/500/1000/2000
   mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);//Options 260/184/94/44/21/10/5
   mpu.setSampleRateDivisor(0); // Divides Gyro output rate by (Sample divisor + 1) to get sample rate
+}
+void acc_start_samples(float* vals, bool reset = 0){//This function was moved up here because it needs to be in-context of loop() since it takes in input
+  static int count = 0;
+  static float average[3] = {0,0,9.8};
+  static int start_time = 0;
+  if(reset){
+    count = 0;
+    average[0] = 0;average[1] = 0; average[2] = 9.8;
+    start_time = millis();
+  }else if(millis()-start_time < 1000){//Only sample for 1000ms
+    average[0] = (average[0]*count + vals[0])/(count+1);
+    average[1] = (average[1]*count + vals[1])/(count+1);
+    average[2] = (average[2]*count + vals[2])/(count+1);
+    count++;
+  }else{
+    float mag = sqrt(pow(average[0],2) + pow(average[1],2) + pow(average[2],2));
+    rot_start[0] = std::atan(average[1]/average[2]);
+    rot_start[1] = std::asin(-average[0]/mag);
+  }
 }
 void readMPU6050(){    //Elizabeth McGhee
   sensors_event_t a, g, temp;
@@ -1199,14 +1272,14 @@ void readLSM() {  //Alleon Oxales
   lsm.read();
   lsm.getEvent(&LSM_acc, &LSM_gyro, &LSM_mag, &LSM_temp);
 
-  LSM_AX = LSM_acc.acceleration.x;
-  LSM_AY = LSM_acc.acceleration.y;
+  LSM_AX = -LSM_acc.acceleration.y;
+  LSM_AY = -LSM_acc.acceleration.x;
   LSM_AZ = LSM_acc.acceleration.z;
-  LSM_GX = LSM_gyro.gyro.x;
-  LSM_GY = LSM_gyro.gyro.y;
+  LSM_GX = -LSM_gyro.gyro.y;
+  LSM_GY = -LSM_gyro.gyro.x;
   LSM_GZ = LSM_gyro.gyro.z;
-  LSM_MX = LSM_mag.magnetic.x;
-  LSM_MY = LSM_mag.magnetic.y;
+  LSM_MX = -LSM_mag.magnetic.y;
+  LSM_MY = -LSM_mag.magnetic.x;
   LSM_MZ = LSM_mag.magnetic.z;
   
   if(!errorCodes[SD_FAIL]){
@@ -1254,8 +1327,8 @@ void readADXL() {
   adxl.getEvent(&event);
 
   /* Display the results (acceleration is measured in m/s^2) */
-  ADXL345_AX = event.acceleration.x;
-  ADXL345_AY = event.acceleration.y;
+  ADXL345_AX = -event.acceleration.x;
+  ADXL345_AY = -event.acceleration.y;
   ADXL345_AZ = event.acceleration.z;
 
   if(!errorCodes[SD_FAIL]){
@@ -1362,6 +1435,16 @@ void commands(char command) {  //Alleon Oxales
       break;
     }
     case 0x07:
+      pres_start_samples(0,1);//Resets sample timer to start taking samples
+      AoA_start1 = readRawAngle(&Wire);//sets zero for angle of attack sensors
+      AoA_start2 = readRawAngle(&Wire1);//sets zero for angle of attack sensors
+      if(!errorCodes[SD_FAIL]){
+        logfile.print(micros());
+        logfile.print("|AoA_Callib|");
+        logfile.print(AoA_start1);
+        logfile.print('|');
+        logfile.println(AoA_start2);
+      }
       break;
     case 0x08:
       break;

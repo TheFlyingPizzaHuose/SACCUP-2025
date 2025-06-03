@@ -1127,31 +1127,44 @@ int* uint_to_binary(char character) { //Leiana Mendoza
 
 // Event Detection ============================================ Elizabeth McGhee WIP
 void event_detection() {
-  float dummy_variable = 0.3;  //We don't know this yet
+  
+  float dummy_var = 0.3;  //We don't know this yet
   float g = 9.81;
+  double speed = 0;
+  bool liftoff = ((LSM_AZ > 2*g && ADXL345_AZ > 2*g && MPU_AZ > 2*g) && (BMP_280_ALT > 50 && BMP_1_180_ALT > 50) && (speed > 20));
+  bool burnout = ((LSM_AZ < 1*g && ADXL345_AZ < 1*g && MPU_AZ < 1*g) && (BMP_280_ALT > dummy_var && BMP_1_180_ALT > dummy_var));
+  bool apogee = ((LSM_AX < 0 && LSM_AY < 0 && LSM_AZ < 0) && (MPU_GX < 0 && MPU_GY < 0 && MPU_GZ < 0));
+  bool drogue_deploy = true;
+  bool main_deploy = false;
+  bool landed = (velocity < 5 && (BMP_280_ALT < 50 && BMP_1_180_ALT < 50));
+
   // The index is in the following ascending order: liftoff, burnout, apogee, drogue deploy, main deplot, landed
-  // Liftoff =================================================
-  if (position[2] > 50.0 and acc[2] > 2 * g) {
+  if (liftoff) {
     my_event_arr[0] = 1;
   } else {
     my_event_arr[0] = 0;
   }
-  // Burnout =================================================
-  if (position[2] > dummy_variable and acc[2] < g) {
+  if (burnout) {
     my_event_arr[1] = 1;
   } else {
     my_event_arr[1] = 0;
   }
-  // Apogee ==================================================
-  if (velocity[2] < 0) {
+  if (apogee) {
     my_event_arr[2] = 1;
   } else {
     my_event_arr[2] = 0;
   }
-  // Drogue Deploy ===========================================
-  // Main Deploy =============================================
-  // Landed ==================================================
-  if (position[2] < 50.0) {
+  if (drogue_deploy){
+    my_event_arr[3] = 1;
+  } else {
+    my_event_arr[3] = 0;
+  }
+  if (main_deploy){
+    my_event_arr[4] = 1;
+  } else {
+    my_event_arr[4] = 0;
+  }
+  if (landed) {
     my_event_arr[5] = 1;
   } else {
     my_event_arr[5] = 0;

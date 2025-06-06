@@ -31,7 +31,7 @@ https://docs.google.com/spreadsheets/d/1Gov30G9uyXv7lDdadh1TLPG05m9mBo-JQmem5j_y
 #include <EEPROM.h>
 #include <uRTCLib.h>  //Include Real Time Clock Library
 #include <time.h>
-//#include "kalman_filter.h"
+#include "kalman_filter.h"
 
 uRTCLib rtc(0x68);  //Real time clock I2C address
 char daysOfTheWeek[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
@@ -174,8 +174,6 @@ const int PRGM_ERR = 0,
           ACCEL_CALLIB = 30,
           MAG_CALLIB = 31;
 
-// Kalman Filter initialization (To be changed)
-
 
 //Component cycle time micros
 uint BMP280_RATE = 5500,  //Ultra low: 5.5, Low: 7.5, Standard: 11.5, High: 19.5, Ultra High: 37.5
@@ -254,11 +252,6 @@ float BMP280_PRESS = 0,
       LSM_MY = 0,
       LSM_MZ = 0;
 
-//Kalman variables
-double alpha;
-//vector<vector<double>> state_est;
-//vector<vector<double>> covar_est;
-double alpha_prev;
 //Kinematics variables
 float latitude = 0,         //degrees,minutes,seconds,arcseconds
       longitude = 0;        //degrees,minutes,seconds,arcseconds
@@ -266,7 +259,7 @@ float position[3] = { 0, 0, 0 },  //Absolute position measurements
   velocity[3] = { 0, 0, 0 },      //Velocity measurements
   acc[3] = { 0, 0, 0 },      //Acceleration measurement
   abs_rot[4] = { 1, 0, 0, 0 },  //Absolute rotation measurements
-  dt_rot[3] = { 0, 0, 0 },   //Derivatie rotation measurements
+  dt_rot[3] = { 0, 0, 0 },   //Derivative rotation measurements
   d2_rot[3] = { 0, 0, 0 };   //2nd Derivative rotation measurements
 
 void setup() {
@@ -351,13 +344,18 @@ void loop() {
       STATUS_LAST = 0;
     }
     
-    //Kalman Filter
-    //alpha = constant_alpha(velocity)
-    //vector<vector<double>> A = state_transition(alpha, alpha_prev, theta, phi, gamma);
-    //KalmanFilter myObj = KalmanFilter(A, H, Q, R);
-    //state_est = myObj.run_kalman_filter_estimate(covar_est, state_est, measurement);
-    //covar_est = myObj.run_kalman_filter_covar(covar_est, state_est, measurement);
-    //alpha_prev = alpha;
+    runKalmanFilter filter;
+    alt1 = alt_from_pres(BMP280_PRESS);
+    alt2 = alt_from_pres(BMP180_1_PRESS);
+    alt3 = alt_from_pres(BMP180_2_PRESS);
+    filter.updateData(GPS_LAT, GPS_LON, alt1, alt2, alt3, MPU_AX, MPU_AY, MPU_AZ, 
+      LSM_AX, LSM_AY, LSM_AZ, ADXL345_AX, ADXL345_AY, ADXL_AZ, LSM_GX, LSM_GY, LSM_GZ, 
+      MPU_GX, MPU_GY, MPU_GZ);
+    filter.updateStateTransition();
+    filter.updateMeasurement();
+    filter.updateState_and_Covar();
+
+    
     readRFD();
     readRFM();
     //At each sample, this also checks if the sensor has failed.

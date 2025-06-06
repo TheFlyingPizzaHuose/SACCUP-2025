@@ -1225,6 +1225,40 @@ float lon_to_meters(float val){
   float x = 40075 * cos( latitude ) / 360;
   return x/1000;
 }
+
+float velocity_magnitude(){
+  float T = 280;
+  float gamma = 1.4;
+  float R = 287;
+  float stag_press = BMP_1_180;
+  float static_press = BMP_2_180;
+
+  float velocity = sqrt(((2*gamma*R*T)/(gamma - 1))*(pow((stag_press/static_press),(gamma - 1)/1)) - 1);
+  return velocity;
+}
+
+vector<double> quaternion_to_speed(double a, double b, double c, double d){
+  vector<double> q = {a, b, c, d};
+  vector<double> direction = {0, 0, 1};
+  vector<double> q_star = {a, -b, -c, -d};
+  vector<double> new_q = {q[1]*direction[1]*q_star[1], q[2]*direction[2]*q_star[2], q[3]*direction[3]*q_star[3]};
+
+  return new_q;
+
+double x_speed(vector<double> quaternion, double velocity){
+  return velocity * quaternion[1];
+}
+
+double x_speed(vector<double> quaternion, double velocity){
+  return velocity * quaternion[2];
+}
+
+double x_speed(vector<double> quaternion, double velocity){
+  return velocity * quaternion[3];
+}
+  
+  
+}
   
 float alt_from_pres(float val){
   return 44330.0*(1-pow(press_start/val,0.1903)); //Based on Adafruit_BMP_085_Unified

@@ -345,10 +345,9 @@ void loop() {
     }
     
     runKalmanFilter filter;
-    alt1 = alt_from_pres(BMP280_PRESS);
-    alt2 = alt_from_pres(BMP180_1_PRESS);
-    alt3 = alt_from_pres(BMP180_2_PRESS);
-    filter.updateData(GPS_LAT, GPS_LON, alt1, alt2, alt3, MPU_AX, MPU_AY, MPU_AZ, 
+    float x_meters = lat_to_meters(GPS_LAT);
+    float y_meters = lon_meters(GPS_LON)
+    filter.updateData(x_meters, y_meters, BMP280_ALT, BMP180_1_ALT, BMP180_2_ALT, MPU_AX, MPU_AY, MPU_AZ, 
       LSM_AX, LSM_AY, LSM_AZ, ADXL345_AX, ADXL345_AY, ADXL_AZ, LSM_GX, LSM_GY, LSM_GZ, 
       MPU_GX, MPU_GY, MPU_GZ);
     filter.updateStateTransition();
@@ -1217,6 +1216,16 @@ float bmpAplyCalibrat(int sensor_id, float val){
   }
   return 0;
 }
+
+float lat_to_meters(float val) {
+  return (val * 111.32)/1000;
+}
+
+float lon_to_meters(float val){
+  float x = 40075 * cos( latitude ) / 360;
+  return x/1000;
+}
+  
 float alt_from_pres(float val){
   return 44330.0*(1-pow(press_start/val,0.1903)); //Based on Adafruit_BMP_085_Unified
 }

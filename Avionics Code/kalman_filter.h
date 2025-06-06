@@ -365,7 +365,7 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                                            {0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0},
                                            {0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0},
                                            {0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0},
-                                      `    {0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0},
+                                           {0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0},
                                            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
@@ -412,8 +412,9 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                                          {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10}};
                                       
       double x, y, z, vx, vy, vz, ax, ay, az, gx, gy, gz, a, b, c, d, alpha_phi, alpha_gamma;
-      double lat, lon, altitude_1, altitude_2, vx1, vy1, vz1, ax1, ay1, az1, ax2, ay2, az2, ax3, ay3, az3,
-             gx1, gy1, gz1, gx2, gy2, gz2, alpha, velocity;
+      double lat, lon, altitude_1, altitude_2, press1, press2, press3, velocity, vx1, vy1, vz1, 
+             ax1, ay1, az1, ax2, ay2, az2, ax3, ay3, az3, A, B, C, D,
+             gx1, gy1, gz1, gx2, gy2, gz2, MX, MY, MZ;
       double state_var[18] = {x, y, z, vx, vy, vz, ax, ay, az, gx, gy, gz, a, b, c, d, alpha_phi, alpha_gamma};
       
       vector<vector<double>> A_matrix = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
@@ -497,18 +498,55 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
       runKalmanFilter(){}
       ~runKalmanFilter(){}
 
-      void updateData(double GPS_LAT, double GPS_LON, double alt1, double alt2, double VX,
-                      double VZ, double VZ, double MPU_AX, double MPU_AY, double MPU_AZ, double LSM_AX, 
-                      double LSM_AY, double LSM_AZ, double ADXL345_AX, double ADXL345_AY, 
-                      double ADXL345_AZ, double LSM_GX, double LSM_GY,double LSM_GZ, 
-                      double MPU_GX, double MPU_GY, double MPU_GZ, double velocity){
+      float velocity_magnitude(){
+        float T = 280;
+        float gamma = 1.4;
+        float R = 287;
+
+        float velocity = sqrt(((2*gamma*R*T)/(gamma - 1))*(pow((press1/press2),(gamma - 1)/1)) - 1);
+        return velocity;
+      }
+
+      vector<double> quaternion_to_speed(double a, double b, double c, double d){
+        vector<double> q = {a, b, c, d};
+        vector<double> direction = {0, 0, 1};
+        vector<double> q_star = {a, -b, -c, -d};
+        vector<double> new_q = {q[1]*direction[1]*q_star[1], q[2]*direction[2]*q_star[2], q[3]*direction[3]*q_star[3]};
+
+        return new_q;}
+
+      double x_speed(vector<double> quaternion, double velocity){
+        return velocity * quaternion[1];
+      }
+
+      double y_speed(vector<double> quaternion, double velocity){
+        return velocity * quaternion[2];
+      }
+
+      double z_speed(vector<double> quaternion, double velocity){
+        return velocity * quaternion[3];
+      }
+        
+  
+
+      void updateData(double GPS_LAT, double GPS_LON, double alt1, double alt2, double PRESS1, 
+                      double PRESS2, double PRESS3, double MPU_AX, double MPU_AY, double MPU_AZ, 
+                      double LSM_AX, double LSM_AY, double LSM_AZ, double ADXL345_AX, double ADXL345_AY, 
+                      double ADXL345_AZ, double a, double b, double c, double d, double LSM_GX, 
+                      double LSM_GY,double LSM_GZ, double MPU_GX, double MPU_GY, double MPU_GZ, double MPU_MX, 
+                      double MPU_MY, double MPU_MZ){
+          vector<double> q = {a, b, c, d};
           lat = GPS_LAT;
           lon = GPS_LON;
           altitude_1 = alt1;
           altitude_2 = alt2;
-          vx1 = VX;
-          vy1 = VY;
-          vz1 = VZ;
+          press1 = PRESS1;
+          press2 = PRESS2;
+          press3 = PRESS3;
+          velocity = velocity_magnitude();
+          vx1 = x_speed(q, velocity);
+          vy1 = y_speed(q, velocity);
+          vz1 = z_speed(q, velocity);
           ax1 = MPU_AX;
           ay1 = MPU_AY;
           az1 = MPU_AZ;
@@ -524,9 +562,11 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
           gx2 = MPU_GX;
           gy2 = MPU_GY;
           gz2 = MPU_GZ;
-  
-          alpha = 0.43;
-          //alpha = constant_alpha(velocity, z);
+          MX = MPU_MX;
+          MY = MPU_MY;
+          MZ = MPU_MZ;
+
+
           
       };
 
@@ -542,7 +582,7 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                         {altitude_2},
                         {vx1},
                         {vy1},
-                        {vz1m },
+                        {vz1},
                         {ax1},
                         {ay1},
                         {az1},

@@ -111,8 +111,8 @@ int gpsVersion = 2;  //SAM-M8Q
 uint gps_sats = 0;
 uint glonas_sats = 0;
 uint gallileo_sats = 0;
-byte setGSV_ON[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00}; //Left here so that it's checksum can be calculated during start
-byte setGSV_OFF[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x39 };
+uint8_t setGSV_ON[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00}; //Left here so that it's checksum can be calculated during start
+uint8_t setGSV_OFF[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x39 };
 
 // AV Modes
 bool lowPower = 0;
@@ -204,9 +204,9 @@ uint BMP280_LAST = 0,
      STATUS_LAST = 0;
 
 //Time variables
-byte time_launch = 0;
-byte last_millis = 0;
-byte last_micros = 0;
+uint8_t time_launch = 0;
+uint8_t last_millis = 0;
+uint8_t last_micros = 0;
 float time_since_launch = 0;
 
 //Start Variables
@@ -325,7 +325,7 @@ void pres_start_samples(float pres, bool reset = 0){//This function was moved up
   }
 }
 
-byte last_gps_byte = 0;
+uint8_t last_gps_byte = 0;
 bool record_bool = 0;
 int record_count = 0;
 int temp = 0;
@@ -344,17 +344,17 @@ void loop() {
       STATUS_LAST = 0;
     }
     
-    runKalmanFilter filter;
-    float x_meters = lat_to_meters(GPS_LAT);
-    float y_meters = lon_meters(GPS_LON)
+    // runKalmanFilter filter;
+    // float x_meters = lat_to_meters(GPS_LAT);
+    // float y_meters = lon_to_meters(GPS_LON);
     
   
-    filter.updateData(x_meters, y_meters, BMP280_ALT, BMP180_1_ALT, BMP180_1_PRESS, BMP180_2_PRESS, BMP280_PRESS,
-      MPU_AX, MPU_AY, MPU_AZ, LSM_AX, LSM_AY, LSM_AZ, ADXL345_AX, ADXL345_AY, ADXL_AZ, filter.state[12], filter.state[13],
-      filter.state[14], filter.state[15], LSM_GX, LSM_GY, LSM_GZ, MPU_GX, MPU_GY, MPU_GZ);
-    filter.updateStateTransition();
-    filter.updateMeasurement();
-    filter.updateState_and_Covar();
+    // filter.updateData(x_meters, y_meters, BMP280_ALT, BMP180_1_ALT, BMP180_1_PRESS, BMP180_2_PRESS, BMP280_PRESS,
+    //   MPU_AX, MPU_AY, MPU_AZ, LSM_AX, LSM_AY, LSM_AZ, ADXL345_AX, ADXL345_AY, ADXL345_AZ, filter.state[12][0], filter.state[13][0],
+    //   filter.state[14][0], filter.state[15][0], LSM_GX, LSM_GY, LSM_GZ, MPU_GX, MPU_GY, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ);
+    // filter.updateStateTransition();
+    // filter.updateMeasurement();
+    // filter.updateState_and_Covar();
 
     
     readRFD();
@@ -538,33 +538,33 @@ void normalStart() {
   logfile.flush();
 }
 //Generate the configuration string for Factory Default Settings
-byte setDefaults[] = { 0xB5, 0x62, 0x06, 0x09, 0x0D, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x17, 0x2F, 0xAE };
+uint8_t setDefaults[] = { 0xB5, 0x62, 0x06, 0x09, 0x0D, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x17, 0x2F, 0xAE };
 
 //10Hz Max data rate for SAM-M8Q
 //byte setDataRate[] = { 0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0xFA, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x96 };
 //setDataRate[6] = 0x64;
 //setDataRate[12] = 0x7A;
 //setDataRate[13] = 0x12;
-byte setDataRate[] = { 0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x64, 0x00, 0x01, 0x00, 0x01, 0x00, 0x7A, 0x12 };
+uint8_t setDataRate[] = { 0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x64, 0x00, 0x01, 0x00, 0x01, 0x00, 0x7A, 0x12 };
 
 //Faster 38400 Baud Rate for the higher update rates
-byte setBaudRate[] = { 0xB5, 0x62, 0x06, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0xD0, 0x08, 0x00, 0x00, 0x00, 0x96, 0x00, 0x00, 0x23, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAF, 0x70 };
+uint8_t setBaudRate[] = { 0xB5, 0x62, 0x06, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0xD0, 0x08, 0x00, 0x00, 0x00, 0x96, 0x00, 0x00, 0x23, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAF, 0x70 };
 
 //Generate the configuration string for Navigation Mode
-byte setNav[] = { 0xB5, 0x62, 0x06, 0x24, 0x24, 0x00, 0xFF, 0xFF, 0x08, 0x03, 0x00, 0x00, 0x00, 0x00, 0x10, 0x27, 0x00, 0x00, 0x05, 0x00, 0xFA, 0x00, 0xFA, 0x00, 0x64, 0x00, 0x2C, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10, 0x27, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4F, 0x1F };
+uint8_t setNav[] = { 0xB5, 0x62, 0x06, 0x24, 0x24, 0x00, 0xFF, 0xFF, 0x08, 0x03, 0x00, 0x00, 0x00, 0x00, 0x10, 0x27, 0x00, 0x00, 0x05, 0x00, 0xFA, 0x00, 0xFA, 0x00, 0x64, 0x00, 0x2C, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10, 0x27, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4F, 0x1F };
 
 //Generate the configuration string for NMEA messages
-byte setGLL[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x2B };
-byte setGSA[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x31 };
-byte setVTG[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x46 };
-byte setGGA[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x23 };
-byte set4_1[] = { 0xB5, 0x62, 0x06, 0x17, 0x14, 0x00, 0x00, 0x41, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0x57 };
+uint8_t setGLL[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x2B };
+uint8_t setGSA[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x31 };
+uint8_t setVTG[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x46 };
+uint8_t setGGA[] = { 0xB5, 0x62, 0x06, 0x01, 0x08, 0x00, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x23 };
+uint8_t set4_1[] = { 0xB5, 0x62, 0x06, 0x17, 0x14, 0x00, 0x00, 0x41, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0x57 };
 
 //Generate the configuration string for interference resistance settings
-byte setJam[] = { 0xB5, 0x62, 0x06, 0x39, 0x08, 0x00, 0xF3, 0xAC, 0x62, 0xAD, 0x1E, 0x43, 0x00, 0x00, 0x56, 0x45 };
+uint8_t setJam[] = { 0xB5, 0x62, 0x06, 0x39, 0x08, 0x00, 0xF3, 0xAC, 0x62, 0xAD, 0x1E, 0x43, 0x00, 0x00, 0x56, 0x45 };
 
 //For M8 series gps, just add Galileo, from https://portal.u-blox.com/s/question/0D52p00008HKEEYCA5/ublox-gps-galileo-enabling-for-ubx-m8
-byte setSat[] = { 0xB5, 0x62, 0x06, 0x3E, 0x0C, 0x00, 0x00, 0x00, 0x20, 0x01, 0x02, 0x04, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x82, 0x56 };
+uint8_t setSat[] = { 0xB5, 0x62, 0x06, 0x3E, 0x0C, 0x00, 0x00, 0x00, 0x20, 0x01, 0x02, 0x04, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x82, 0x56 };
 
 int dynamicStartStep = 0;
 void dynamicStart() {  //Alleon Oxales, performs startup sequence steps every 100ms to prevent blocking of sensors in case of in-flight start.
@@ -735,7 +735,7 @@ bool initSAM_M8Q() {
   gpsSerial.begin(38400);
   return gpsReady;
 }  //end ConfigGPS
-int gpsSet(byte* msg, byte size) {
+int gpsSet(uint8_t* msg, uint8_t size) {
   int gpsSetSuccess = 0;
   while (gpsSetSuccess < 3) {
     sendUBX(msg, size);
@@ -743,8 +743,8 @@ int gpsSet(byte* msg, byte size) {
   }
   return gpsSetSuccess;
 }  //end gpsSet
-void gpsChecksum(byte* checksumPayload, byte payloadSize) {
-  byte CK_A = 0, CK_B = 0;
+void gpsChecksum(uint8_t* checksumPayload, uint8_t payloadSize) {
+  uint8_t CK_A = 0, CK_B = 0;
   for (int i = 2; i < payloadSize; i++) {
     if(i == payloadSize-2){
       *(checksumPayload+i) = CK_A;
@@ -756,7 +756,7 @@ void gpsChecksum(byte* checksumPayload, byte payloadSize) {
     }
   }
 }  //end gpsChecksum
-void sendUBX(byte* UBXmsg, byte msgLength) {
+void sendUBX(uint8_t* UBXmsg, uint8_t msgLength) {
   for (int i = 0; i < msgLength; i++) {
     gpsSerial.write(UBXmsg[i]);
     gpsSerial.flush();
@@ -764,11 +764,11 @@ void sendUBX(byte* UBXmsg, byte msgLength) {
   gpsSerial.println();
   gpsSerial.flush();
 }  //end sendUBX
-byte getUBX_ACK(byte* msgID) {
-  byte CK_A = 0, CK_B = 0;
-  byte incoming_char;
+uint8_t getUBX_ACK(uint8_t* msgID) {
+  uint8_t CK_A = 0, CK_B = 0;
+  uint8_t incoming_char;
   unsigned long ackWait = millis();
-  byte ackPacket[10] = { 0xB5, 0x62, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+  uint8_t ackPacket[10] = { 0xB5, 0x62, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
   int i = 0;
   while (1) {
     if (gpsSerial.available()) {
@@ -843,7 +843,7 @@ void readGPS(){
     if(gps_msg_index > 190){gps_msg_index = 0;}//Prevent buffer overflow
   }
 }  //end readGPS
-void parseGPS(char* msg, byte size) {  //Alleon Oxales
+void parseGPS(char* msg, uint8_t size) {  //Alleon Oxales
   uint msg_index = 0;
   uint item_index = 0;
   uint item_length = 0;
@@ -881,7 +881,7 @@ void parseGPS(char* msg, byte size) {  //Alleon Oxales
   }
   msg_index = 0;
   if (*(msg + 3) == 'G' && *(msg + 4) == 'S' && *(msg + 5) == 'V') {  //Checks GSV type pg. 156 of M8 Reciever Desc.
-    byte sat_count = 0;
+    uint8_t sat_count = 0;
     msg_index += 7;                                                   //Skips the first comma
     while (msg_index < size) {
       if (*(msg + msg_index) == ',') {
@@ -924,7 +924,7 @@ void parseGPS(char* msg, byte size) {  //Alleon Oxales
   }
   if (debug) { Serial.print("||||"); }
 }  //end parseGPS
-void parseLatLong(char* value, byte size) {//converts text lat, long to float, Alleon Oxales
+void parseLatLong(char* value, uint8_t size) {//converts text lat, long to float, Alleon Oxales
   float power = 10000;
   float sum = 0;
   if(size == 10){power = 1000;} //Change power of ten to ten if size is for lattitude, otherwise keep it at 100
@@ -1066,9 +1066,9 @@ char* readyPacket() {  //Leiana Mendoza -
   }
   return charArray;
 }  //end readyPacket
-byte radioChecksum(int* radioMSG, byte msgLength) {//fletcher 8 checksum algorithm
-  byte sum1 = 0;
-  byte sum2 = 0;
+uint8_t radioChecksum(int* radioMSG, uint8_t msgLength) {//fletcher 8 checksum algorithm
+  uint8_t sum1 = 0;
+  uint8_t sum2 = 0;
   for (size_t i = 0; i < msgLength; i++) {
       sum1 = (sum1 + radioMSG[i]) % 15;
       sum2 = (sum2 + sum1) % 15;
@@ -1130,12 +1130,12 @@ void event_detection() {
   float dummy_var = 0.3;  //We don't know this yet
   float g = 9.81;
   double speed = 0;
-  bool liftoff = ((LSM_AZ > 2*g && ADXL345_AZ > 2*g && MPU_AZ > 2*g) && (BMP_280_ALT > 50 && BMP_1_180_ALT > 50) && (speed > 20));
-  bool burnout = ((LSM_AZ < 1*g && ADXL345_AZ < 1*g && MPU_AZ < 1*g) && (BMP_280_ALT > dummy_var && BMP_1_180_ALT > dummy_var));
+  bool liftoff = ((LSM_AZ > 2*g && ADXL345_AZ > 2*g && MPU_AZ > 2*g) && (BMP280_ALT > 50 && BMP180_1_ALT > 50) && (speed > 20));
+  bool burnout = ((LSM_AZ < 1*g && ADXL345_AZ < 1*g && MPU_AZ < 1*g) && (BMP280_ALT > dummy_var && BMP180_1_ALT > dummy_var));
   bool apogee = ((LSM_AX < 0 && LSM_AY < 0 && LSM_AZ < 0) && (MPU_GX < 0 && MPU_GY < 0 && MPU_GZ < 0));
   bool drogue_deploy = true;
   bool main_deploy = false;
-  bool landed = (velocity < 5 && (BMP_280_ALT < 50 && BMP_1_180_ALT < 50));
+  bool landed = (dummy_var < 5 && (BMP280_ALT < 50 && BMP180_1_ALT < 50));
 
   // The index is in the following ascending order: liftoff, burnout, apogee, drogue deploy, main deplot, landed
   if (liftoff) {
@@ -1232,42 +1232,29 @@ float velocity_magnitude(){
   float T = 280;
   float gamma = 1.4;
   float R = 287;
-  float stag_press = BMP_1_180;
-  float static_press = BMP_2_180;
+  float stag_press = BMP180_1_PRESS;
+  float static_press = BMP180_2_PRESS;
 
   float velocity = sqrt(((2*gamma*R*T)/(gamma - 1))*(pow((stag_press/static_press),(gamma - 1)/1)) - 1);
   return velocity;
 }
 
-vector<double> quaternion_to_speed(double a, double b, double c, double d){
-  vector<double> q = {a, b, c, d};
-  vector<double> direction = {0, 0, 1};
-  vector<double> q_star = {a, -b, -c, -d};
-  vector<double> new_q = {q[1]*direction[1]*q_star[1], q[2]*direction[2]*q_star[2], q[3]*direction[3]*q_star[3]};
+// vector<double> quaternion_to_speed(double a, double b, double c, double d){
+//   vector<double> q = {a, b, c, d};
+//   vector<double> direction = {0, 0, 1};
+//   vector<double> q_star = {a, -b, -c, -d};
+//   vector<double> new_q = {q[1]*direction[1]*q_star[1], q[2]*direction[2]*q_star[2], q[3]*direction[3]*q_star[3]};
 
-  return new_q;
+//   return new_q;
+//   }
 
-double x_speed(vector<double> quaternion, double velocity){
-  return velocity * quaternion[1];
-}
-
-double x_speed(vector<double> quaternion, double velocity){
-  return velocity * quaternion[2];
-}
-
-double x_speed(vector<double> quaternion, double velocity){
-  return velocity * quaternion[3];
-}
-  
-  
-}
-  
 float alt_from_pres(float val){
   return 44330.0*(1-pow(press_start/val,0.1903)); //Based on Adafruit_BMP_085_Unified
 }
+
 void TCA9548A(uint8_t bus) {     // Select I2C Bus On I2C Multiplexer (if used)
   Wire.beginTransmission(0x70);  // TCA9548A address
-  Wire.write(1 << bus);          // send byte to select bus
+  Wire.write(1 << bus);          // send uint8_t to select bus
   Wire.endTransmission();
   Serial.print(bus);
 }  //end TCA9548A
@@ -1415,7 +1402,7 @@ int readRawAngle(TwoWire* wire) {  //Ryan Santiago
     int highByte = wire->read();
     int lowByte = wire->read();
 
-    // Combine high and low byte to form a 12-bit result
+    // Combine high and low uint8_t to form a 12-bit result
     int angle = (highByte << 8) | lowByte;
 
     // Return the angle

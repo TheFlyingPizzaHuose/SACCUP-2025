@@ -348,23 +348,27 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                                            {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                           {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                           {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                           {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                           {0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                           {0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0},
-                                           {0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0},
-                                           {0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0},
+                                           {0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0},
+                                           {0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0},
                                            {0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0},
-                                           {0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0}};
+                                           {0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0},
+                                           {0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0},
+                                           {0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0},
+                                           {0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0},
+                                           {0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0},
+                                           {0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0},
+                                      `    {0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0},
+                                           {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                           {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                           {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
 
       vector<vector<double>> Q_matrix = {{0.001,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                          {0,0.001,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
@@ -408,7 +412,7 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                                          {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10}};
                                       
       double x, y, z, vx, vy, vz, ax, ay, az, gx, gy, gz, a, b, c, d, alpha_phi, alpha_gamma;
-      double lat, lon, altitude_1, altitude_2, altitude_3, ax1, ay1, az1, ax2, ay2, az2, ax3, ay3, az3,
+      double lat, lon, altitude_1, altitude_2, vx1, vy1, vz1, ax1, ay1, az1, ax2, ay2, az2, ax3, ay3, az3,
              gx1, gy1, gz1, gx2, gy2, gz2, alpha, velocity;
       double state_var[18] = {x, y, z, vx, vy, vz, ax, ay, az, gx, gy, gz, a, b, c, d, alpha_phi, alpha_gamma};
       
@@ -493,16 +497,18 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
       runKalmanFilter(){}
       ~runKalmanFilter(){}
 
-      void updateData(double GPS_LAT, double GPS_LON, double alt1, double alt2, double alt3, 
-                      double MPU_AX, double MPU_AY, double MPU_AZ, double LSM_AX, 
+      void updateData(double GPS_LAT, double GPS_LON, double alt1, double alt2, double VX,
+                      double VZ, double VZ, double MPU_AX, double MPU_AY, double MPU_AZ, double LSM_AX, 
                       double LSM_AY, double LSM_AZ, double ADXL345_AX, double ADXL345_AY, 
                       double ADXL345_AZ, double LSM_GX, double LSM_GY,double LSM_GZ, 
-                      double MPU_GX, double MPU_GY, double MPU_GZ){
+                      double MPU_GX, double MPU_GY, double MPU_GZ, double velocity){
           lat = GPS_LAT;
           lon = GPS_LON;
           altitude_1 = alt1;
           altitude_2 = alt2;
-          altitude_3 = alt3;
+          vx1 = VX;
+          vy1 = VY;
+          vz1 = VZ;
           ax1 = MPU_AX;
           ay1 = MPU_AY;
           az1 = MPU_AZ;
@@ -518,7 +524,7 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
           gx2 = MPU_GX;
           gy2 = MPU_GY;
           gz2 = MPU_GZ;
-          velocity = pow(pow(vx, 2) + pow(vy, 2) + pow(vz, 2), 1.0/2.0);
+  
           alpha = 0.43;
           //alpha = constant_alpha(velocity, z);
           
@@ -534,7 +540,9 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                         {lon},
                         {altitude_1},
                         {altitude_2},
-                        {altitude_3},
+                        {vx1},
+                        {vy1},
+                        {vz1m },
                         {ax1},
                         {ay1},
                         {az1},
@@ -550,7 +558,9 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                         {gx2},
                         {gy2},
                         {gz2},
-                        {alpha}};
+                        {MX},
+                        {MY},
+                        {MZ}};
       }
 
       void updateState_and_Covar(){

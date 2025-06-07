@@ -413,7 +413,7 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                                       
       double x, y, z, vx, vy, vz, ax, ay, az, gx, gy, gz, a, b, c, d, alpha_phi, alpha_gamma;
       double lat, lon, altitude_1, altitude_2, press1, press2, press3, velocity, vx1, vy1, vz1, 
-             ax1, ay1, az1, ax2, ay2, az2, ax3, ay3, az3, A, B, C, D,
+             ax1, ay1, az1, ax2, ay2, az2, ax3, ay3, az3, A, B, C, D, ang1, ang2, angle_1, angle_2,
              gx1, gy1, gz1, gx2, gy2, gz2, MX, MY, MZ;
       double state_var[18] = {x, y, z, vx, vy, vz, ax, ay, az, gx, gy, gz, a, b, c, d, alpha_phi, alpha_gamma};
       
@@ -526,6 +526,30 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
       double z_speed(vector<double> quaternion, double velocity){
         return velocity * quaternion[3];
       }
+
+       double<double<vector>> updateR(angle_1, angle_2){
+          vector<vector<double>> R_matrix = {{10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                             {0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                             {0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                             {0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                             {0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                             {0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                             {0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                             {0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                             {0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0},
+                                             {0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0},
+                                             {0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0},
+                                             {0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0},
+                                             {0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0},
+                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0},
+                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0},
+                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0},
+                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0},
+                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0},
+                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0},
+                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,angle_1,0},
+                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,angle_2}};
+       }
         
   
 
@@ -534,7 +558,7 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                       double LSM_AX, double LSM_AY, double LSM_AZ, double ADXL345_AX, double ADXL345_AY, 
                       double ADXL345_AZ, double a, double b, double c, double d, double LSM_GX, 
                       double LSM_GY,double LSM_GZ, double MPU_GX, double MPU_GY, double MPU_GZ, double MPU_MX, 
-                      double MPU_MY, double MPU_MZ){
+                      double MPU_MY, double MPU_MZ, double ang1, double ang2){
           vector<double> q = {a, b, c, d};
           lat = GPS_LAT;
           lon = GPS_LON;
@@ -565,6 +589,8 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
           MX = MPU_MX;
           MY = MPU_MY;
           MZ = MPU_MZ;
+          angle_1 = ang1;
+          angle_2 = ang2;
 
 
           
@@ -573,6 +599,10 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
 
       void updateStateTransition(){
           A_matrix = state_transition(gx, gy, gz);
+      }
+
+      void updateRMatrix(){
+          R_matrix = updateR(angle_1, angle_2);
       }
 
       void updateMeasurement(){

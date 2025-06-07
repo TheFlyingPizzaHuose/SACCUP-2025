@@ -351,7 +351,7 @@ void loop() {
   
     // filter.updateData(x_meters, y_meters, BMP280_ALT, BMP180_1_ALT, BMP180_1_PRESS, BMP180_2_PRESS, BMP280_PRESS,
     //   MPU_AX, MPU_AY, MPU_AZ, LSM_AX, LSM_AY, LSM_AZ, ADXL345_AX, ADXL345_AY, ADXL345_AZ, filter.state[12][0], filter.state[13][0],
-    //   filter.state[14][0], filter.state[15][0], LSM_GX, LSM_GY, LSM_GZ, MPU_GX, MPU_GY, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ);
+    //   filter.state[14][0], filter.state[15][0], LSM_GX, LSM_GY, LSM_GZ, MPU_GX, MPU_GY, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ, AS5600_1_ANG, AS5600_2_ANG);
     // filter.updateStateTransition();
     // filter.updateMeasurement();
     // filter.updateState_and_Covar();

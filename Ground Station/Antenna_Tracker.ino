@@ -24,26 +24,26 @@ void setup() {
     Serial.print("LSM OK.");
   }
   lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_2G, lsm.LSM9DS1_ACCELDATARATE_952HZ);
-  //pinMode(button1, INPUT_PULLUP);
-  //pinMode(button2, INPUT_PULLUP);
 
-  // Set maximum speed value for the stepper   
+  // Set maximum speed value for the stepper 
+  pinMode(5, INPUT_PULLUP);  // manual trigger button pull-up  
   stepper1.setMaxSpeed(10000000);
   stepper1.setAcceleration(100);
   stepper1.setCurrentPosition(0);
 }
 void loop() {
   //Serial.println(position);
-  button1State = digitalRead(button1);
-  button2State = digitalRead(button2);
   if(last_pos_change - millis() >= pos_change_del){
-    sensors_event_t a, gyro, mag, temp;
-    lsm.getEvent(&a, &gyro, &mag, &temp);
-    float accel[3] = {a.acceleration.x,a.acceleration.y,a.acceleration.z};
-    float theta = floor(angle(accel, up));
-    position = (int)round(max_pos*theta/80);
-    if(position < max_pos){
-      position = max_pos;
+    int buttonState = digitalRead(5);
+    if(buttonState == LOW){
+      sensors_event_t a, gyro, mag, temp;
+      lsm.getEvent(&a, &gyro, &mag, &temp);
+      float accel[3] = {a.acceleration.x,a.acceleration.y,a.acceleration.z};
+      float theta = floor(angle(accel, up));
+      position = (int)round(max_pos*theta/80);
+      if(position < max_pos){
+        position = max_pos;
+      }
     }
     last_pos_change = millis();
     stepper1.moveTo(position);

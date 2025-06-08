@@ -1,9 +1,10 @@
+// Programed by Elizabeth McGhee
+
 #ifndef kalman_filter_h
 #define kalman_filter_h
-
-
 #include <iostream>
 #include <vector>
+//#include <algorithm>
 using namespace std;
 
 vector<vector<double>> swap_rows(vector<vector<double>> myvec, int n, int m){
@@ -343,7 +344,7 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
     return A;
 }
   public:
-    vector<vector<double>> H_matrix = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+        vector<vector<double>> H_matrix = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
@@ -367,11 +368,9 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                                            {0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0},
                                            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                           {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                           {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                            {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
 
-    vector<vector<double>> Q_matrix = {{0.001,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+      vector<vector<double>> Q_matrix = {{0.001,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                          {0,0.001,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                          {0,0,0.001,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                          {0,0,0,0.001,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
@@ -390,37 +389,35 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                                          {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.001,0},
                                          {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.001}};
 
-    vector<vector<double>> R_matrix =   {{10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                         {0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                         {0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                         {0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                         {0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                         {0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                         {0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                         {0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                         {0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                         {0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                         {0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0},
-                                         {0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0},
-                                         {0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0},
-                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0},
-                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0},
-                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0},
-                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0},
-                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0},
-                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0},
-                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0},
-                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0},
-                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0},
-                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10}};
+      vector<vector<double>> R_matrix = {{10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0},
+                                         {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10}};
                                       
-    double x, y, z, vx, vy, vz, ax, ay, az, gx, gy, gz, a, b, c, d, alpha_phi, alpha_gamma;
-    double lat, lon, altitude_1, altitude_2, press1, press2, press3, velocity, vx1, vy1, vz1, 
-             ax1, ay1, az1, ax2, ay2, az2, ax3, ay3, az3, A, B, C, D, ang1, ang2, angle_1, angle_2,
+      double x, y, z, vx, vy, vz, ax, ay, az, gx, gy, gz, a, b, c, d, alpha_phi, alpha_gamma;
+      double lat, lon, altitude_1, altitude_2, press1, press2, press3, velocity, vx1, vy1, vz1, 
+             ax1, ay1, az1, ax2, ay2, az2, ax3, ay3, az3, A, B, C, D,
              gx1, gy1, gz1, gx2, gy2, gz2, MX, MY, MZ;
-    double state_var[18] = {x, y, z, vx, vy, vz, ax, ay, az, gx, gy, gz, a, b, c, d, alpha_phi, alpha_gamma};
+      double state_var[18] = {x, y, z, vx, vy, vz, ax, ay, az, gx, gy, gz, a, b, c, d, alpha_phi, alpha_gamma};
       
-    vector<vector<double>> A_matrix = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+      vector<vector<double>> A_matrix = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                          {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                          {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                          {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
@@ -438,7 +435,7 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                                          {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0},
                                          {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0},
                                          {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}};
-    vector<vector<double>> state = {{0},
+      vector<vector<double>> state = {{0},
                                       {0},
                                       {0},
                                       {0},
@@ -456,7 +453,7 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                                       {0},
                                       {0},
                                       {0}};
-    vector<vector<double>> covar = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+      vector<vector<double>> covar = {{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                       {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                       {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
                                       {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
@@ -475,10 +472,7 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                                       {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0},
                                       {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}};
 
-    vector<vector<double>> measurement = {{0},
-                                            {0},
-                                            {0},
-                                            {0},
+      vector<vector<double>> measurement = {{0},
                                             {0},
                                             {0},
                                             {0},
@@ -501,10 +495,10 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                                             {0}};
                                       
 
-  runKalmanFilter(){}
-  ~runKalmanFilter(){}
+      runKalmanFilter(){}
+      ~runKalmanFilter(){}
 
-  float velocity_magnitude(){
+      float velocity_magnitude(){
         float T = 280;
         float gamma = 1.4;
         float R = 287;
@@ -513,7 +507,7 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
         return velocity;
       }
 
-  vector<double> quaternion_to_speed(double a, double b, double c, double d){
+      vector<double> quaternion_to_speed(double a, double b, double c, double d){
         vector<double> q = {a, b, c, d};
         vector<double> direction = {0, 0, 1};
         vector<double> q_star = {a, -b, -c, -d};
@@ -521,41 +515,17 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
 
         return new_q;}
 
-  double x_speed(vector<double> quaternion, double velocity){
+      double x_speed(vector<double> quaternion, double velocity){
         return velocity * quaternion[1];
       }
 
-  double y_speed(vector<double> quaternion, double velocity){
+      double y_speed(vector<double> quaternion, double velocity){
         return velocity * quaternion[2];
       }
 
-  double z_speed(vector<double> quaternion, double velocity){
+      double z_speed(vector<double> quaternion, double velocity){
         return velocity * quaternion[3];
       }
-
-  vector<vector<double>> updateR(double ang_one, double ang_two){
-          vector<vector<double>> R_matrix = {{10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                             {0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                             {0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                             {0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                             {0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                             {0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                             {0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                             {0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0},
-                                             {0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0},
-                                             {0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,0},
-                                             {0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0},
-                                             {0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0},
-                                             {0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0},
-                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0},
-                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0},
-                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0},
-                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0},
-                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0},
-                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0},
-                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,ang_one,0},
-                                             {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,ang_one}};
-       }
         
   
 
@@ -564,7 +534,7 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
                       double LSM_AX, double LSM_AY, double LSM_AZ, double ADXL345_AX, double ADXL345_AY, 
                       double ADXL345_AZ, double a, double b, double c, double d, double LSM_GX, 
                       double LSM_GY,double LSM_GZ, double MPU_GX, double MPU_GY, double MPU_GZ, double MPU_MX, 
-                      double MPU_MY, double MPU_MZ, double ang1, double ang2){
+                      double MPU_MY, double MPU_MZ){
           vector<double> q = {a, b, c, d};
           lat = GPS_LAT;
           lon = GPS_LON;
@@ -595,8 +565,6 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
           MX = MPU_MX;
           MY = MPU_MY;
           MZ = MPU_MZ;
-          angle_1 = ang1;
-          angle_2 = ang2;
 
 
           
@@ -605,10 +573,6 @@ vector<vector<double>> state_transition(double gx, double gy, double gz){
 
       void updateStateTransition(){
           A_matrix = state_transition(gx, gy, gz);
-      }
-
-      void updateRMatrix(double ang1_err, double ang2_err){
-          R_matrix = updateR(ang1_err, ang2_err);
       }
 
       void updateMeasurement(){

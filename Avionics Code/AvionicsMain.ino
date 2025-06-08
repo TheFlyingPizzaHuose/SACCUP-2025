@@ -351,7 +351,7 @@ void loop() {
   
     // filter.updateData(x_meters, y_meters, BMP280_ALT, BMP180_1_ALT, BMP180_1_PRESS, BMP180_2_PRESS, BMP280_PRESS,
     //   MPU_AX, MPU_AY, MPU_AZ, LSM_AX, LSM_AY, LSM_AZ, ADXL345_AX, ADXL345_AY, ADXL345_AZ, filter.state[12][0], filter.state[13][0],
-    //   filter.state[14][0], filter.state[15][0], LSM_GX, LSM_GY, LSM_GZ, MPU_GX, MPU_GY, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ, AS5600_1_ANG, AS5600_2_ANG);
+    //   filter.state[14][0], filter.state[15][0], LSM_GX, LSM_GY, LSM_GZ, MPU_GX, MPU_GY, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ);
     // filter.updateStateTransition();
     // filter.updateMeasurement();
     // filter.updateState_and_Covar();
@@ -1126,16 +1126,16 @@ int* uint_to_binary(char character) { //Leiana Mendoza
 
 // Event Detection ============================================ Elizabeth McGhee WIP
 void event_detection() {
-  
+   
   float dummy_var = 0.3;  //We don't know this yet
   float g = 9.81;
-  double speed = 0;
+  double speed = velocityMagnitude();
   bool liftoff = ((LSM_AZ > 2*g && ADXL345_AZ > 2*g && MPU_AZ > 2*g) && (BMP280_ALT > 50 && BMP180_1_ALT > 50) && (speed > 20));
   bool burnout = ((LSM_AZ < 1*g && ADXL345_AZ < 1*g && MPU_AZ < 1*g) && (BMP280_ALT > dummy_var && BMP180_1_ALT > dummy_var));
   bool apogee = ((LSM_AX < 0 && LSM_AY < 0 && LSM_AZ < 0) && (MPU_GX < 0 && MPU_GY < 0 && MPU_GZ < 0));
-  bool drogue_deploy = true;
-  bool main_deploy = false;
-  bool landed = (dummy_var < 5 && (BMP280_ALT < 50 && BMP180_1_ALT < 50));
+  bool drogue_deploy = ((speed < 17.3736) && (apogee==1));
+  bool main_deploy = ((BMP280_ALT < 457.2 && BMP180_1_ALT < 457.2) && (speed < 7.9248));
+  bool landed = (filter.state[5] < 5 && (BMP280_ALT < 50 && BMP180_1_ALT < 50));
 
   // The index is in the following ascending order: liftoff, burnout, apogee, drogue deploy, main deplot, landed
   if (liftoff) {

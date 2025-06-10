@@ -252,7 +252,7 @@ void loop() {
           String events = {"LIFTOFF", "BURNOUT", "APOGEE", "DROGUE", "MAIN", "LANDED"};
           String current_event;
           int number = 0;
-          for (int i = 32; i < 38; i++){
+          for (int i = 146; i < 152; i++){
             if (bitArray[i] == 1){
               current_event == events[number];
             }

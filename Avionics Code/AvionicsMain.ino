@@ -31,7 +31,7 @@ https://docs.google.com/spreadsheets/d/1Gov30G9uyXv7lDdadh1TLPG05m9mBo-JQmem5j_y
 #include <EEPROM.h>
 #include <uRTCLib.h>  //Include Real Time Clock Library
 #include <time.h>
-#include "kalman_filter.h"
+// #include "kalman_filter.h"
 using namespace std;
 
 uRTCLib rtc(0x68);  //Real time clock I2C address
@@ -1647,6 +1647,7 @@ long epoch() {
 //=========MATH CODE==========
 float* cross_product(float* a, float* b){
   float result[3] = {a[1]*b[2]-b[1]*a[2],-(a[0]*b[2]-b[0]*a[2]),a[0]*b[1]-b[0]*a[1]};
+  return result;
 }
 float vec_mag(float* a){
   return sqrt(pow(a[0],2)+pow(a[1],2)+pow(a[2],2));
@@ -1661,7 +1662,7 @@ float* quat_mul(float* a, float* b){
     (a[0]*b[2]) - (a[1]*b[3]) + (a[2]*b[0]) + (a[3]*b[1]),
     (a[0]*b[3]) + (a[1]*b[2]) - (a[2]*b[1]) + (a[3]*b[0])
   };
-  return *result;
+  return result;
 }
 float* quat_rot(float* q, float* v){
   float V[4] = {0,v[0],v[1],v[2]};

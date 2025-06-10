@@ -249,7 +249,16 @@ void loop() {
           printErr(); 
           break;
         case 9: //Event
-          Serial.print(" EVENT-PLACEHOLDER"); 
+          String events = {"LIFTOFF", "BURNOUT", "APOGEE", "DROGUE", "MAIN", "LANDED"};
+          String current_event;
+          int number = 0;
+          for (int i = 32; i < 38; i++){
+            if (bitArray[i] == 1){
+              current_event == events[number];
+            }
+            number++;
+          }
+          Serial.print(" " + current_event); 
           break;
         /*case 10: Serial.print("Time"); Serial.print(telemetry[i]);break;
         case 11: Serial.print("Time"); Serial.print(telemetry[i]);break;

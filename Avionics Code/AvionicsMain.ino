@@ -1130,11 +1130,11 @@ int* uint_to_binary(char character) { //Leiana Mendoza
 // Event Detection ============================================ Elizabeth McGhee WIP
 void event_detection() {
    
-  float dummy_var = 0.3;  //We don't know this yet
+  float burn = 684.276;  //We don't know this yet
   float g = 9.81;
   double speed = velocityMagnitude();
   bool liftoff = ((LSM_AZ > 2*g && ADXL345_AZ > 2*g && MPU_AZ > 2*g) && (BMP280_ALT > 50 && BMP180_1_ALT > 50) && (speed > 20));
-  bool burnout = ((LSM_AZ < 1*g && ADXL345_AZ < 1*g && MPU_AZ < 1*g) && (BMP280_ALT > dummy_var && BMP180_1_ALT > dummy_var));
+  bool burnout = ((LSM_AZ < 1*g && ADXL345_AZ < 1*g && MPU_AZ < 1*g) && (BMP280_ALT > burn && BMP180_1_ALT > burn));
   bool apogee = ((LSM_AX < 0 && LSM_AY < 0 && LSM_AZ < 0) && (MPU_GX < 0 && MPU_GY < 0 && MPU_GZ < 0));
   bool drogue_deploy = ((speed < 17.3736) && (apogee==1));
   bool main_deploy = ((BMP280_ALT < 457.2 && BMP180_1_ALT < 457.2) && (speed < 7.9248));

@@ -32,6 +32,7 @@ https://docs.google.com/spreadsheets/d/1Gov30G9uyXv7lDdadh1TLPG05m9mBo-JQmem5j_y
 #include <uRTCLib.h>  //Include Real Time Clock Library
 #include <time.h>
 #include "kalman_filter.h"
+using namespace std;
 
 uRTCLib rtc(0x68);  //Real time clock I2C address
 char daysOfTheWeek[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
@@ -211,7 +212,9 @@ float time_since_launch = 0;
 
 //Start Variables
 float pos_start[3] = {0, 0, 0};
-float rot_start[3] = {0, 0, 0}; //Yaw, Pitch, Roll with front facing up
+float quat_start[4] = {0, 0, 0, 0}; //start quaternion
+float accel_start[3] = {0, 0, 0}; //start acceleration which measures gravity direction
+float mag_start[3] = {0, 0, 0}; //start mag which measures gravity direction
 float press_start = 101325;
 int AoA_start1 = 0, AoA_start2 = 0;
 
@@ -345,16 +348,16 @@ void loop() {
     }
     
     // runKalmanFilter filter;
-    float x_meters = lat_to_meters(GPS_LAT);
-    float y_meters = lon_to_meters(GPS_LON);
+    // float x_meters = lat_to_meters(GPS_LAT);
+    // float y_meters = lon_to_meters(GPS_LON);
     
   
-    filter.updateData(x_meters, y_meters, BMP280_ALT, BMP180_1_ALT, BMP180_1_PRESS, BMP180_2_PRESS, BMP280_PRESS,
-        MPU_AX, MPU_AY, MPU_AZ, LSM_AX, LSM_AY, LSM_AZ, ADXL345_AX, ADXL345_AY, ADXL345_AZ, filter.state[12][0], filter.state[13][0],
-        filter.state[14][0], filter.state[15][0], LSM_GX, LSM_GY, LSM_GZ, MPU_GX, MPU_GY, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ, AS5600_1_ANG, AS5600_2_ANG);
-    filter.updateStateTransition();
-    filter.updateMeasurement();
-    filter.updateState_and_Covar();
+    // filter.updateData(x_meters, y_meters, BMP280_ALT, BMP180_1_ALT, BMP180_1_PRESS, BMP180_2_PRESS, BMP280_PRESS,
+    //   MPU_AX, MPU_AY, MPU_AZ, LSM_AX, LSM_AY, LSM_AZ, ADXL345_AX, ADXL345_AY, ADXL345_AZ, filter.state[12][0], filter.state[13][0],
+    //   filter.state[14][0], filter.state[15][0], LSM_GX, LSM_GY, LSM_GZ, MPU_GX, MPU_GY, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ);
+    // filter.updateStateTransition();
+    // filter.updateMeasurement();
+    // filter.updateState_and_Covar();
 
     
     readRFD();
@@ -1238,7 +1241,34 @@ float velocity_magnitude(){
   float velocity = sqrt(((2*gamma*R*T)/(gamma - 1))*(pow((stag_press/static_press),(gamma - 1)/1)) - 1);
   return velocity;
 }
-
+void get_down_tonight(float* accel_dir, float* mag_dir){
+  //Step 1: get the quaternion needed to rotate our body up vector to the measured world up vector from gravity.
+  const float up[3] = {0,0,1};
+  const float north[3] = {1,0,0};
+  float* cross_1 = cross_product(up, accel_dir);
+  float cross_1_mag = vec_mag(cross_1);
+  float rot_vec[3] = {cross_1[0]/cross_1_mag,cross_1[1]/cross_1_mag,cross_1[2]/cross_1_mag};
+  float theta_half = acos(dot_product(up,accel_dir)/vec_mag(accel_dir));
+  float quat1[4] = {cos(theta_half),
+    rot_vec[0]*sin(theta_half),
+    rot_vec[1]*sin(theta_half),
+    rot_vec[2]*sin(theta_half)};
+  //Get magnetometer projection along XY plane
+  float proj_len = dot_product(mag_dir, accel_dir)/dot_product(accel_dir,accel_dir);
+  float mag_proj[3] = {mag_dir[0] - accel_dir[0]*proj_len,
+    mag_dir[1] - accel_dir[1]*proj_len,
+    mag_dir[2] - accel_dir[2]*proj_len
+  };
+  //Step 2: rotate the magnetometer vector by the quaternion
+  float M[4] = {0,mag_proj[0],mag_proj[1],mag_proj[2]};
+  float* M_rot = quat_rot(quat1, M);
+  //Step 3: get the quaternion needed to rotate body_x  (north) to measured north
+  float theta_2_half = acos(dot_product(north,M_rot)/vec_mag(M_rot));
+  float quat2[4] = {cos(theta_2_half),0,0,sin(theta_2_half)};
+  //Step 4: get final quaternion
+  float* result = quat_mul(quat1, quat2);
+  quat_start[0] = *(result); quat_start[1] = *(result+1); quat_start[2] = *(result+2); quat_start[3] = *(result+3);
+}
 // vector<double> quaternion_to_speed(double a, double b, double c, double d){
 //   vector<double> q = {a, b, c, d};
 //   vector<double> direction = {0, 0, 1};
@@ -1251,7 +1281,6 @@ float velocity_magnitude(){
 float alt_from_pres(float val){
   return 44330.0*(1-pow(press_start/val,0.1903)); //Based on Adafruit_BMP_085_Unified
 }
-
 void TCA9548A(uint8_t bus) {     // Select I2C Bus On I2C Multiplexer (if used)
   Wire.beginTransmission(0x70);  // TCA9548A address
   Wire.write(1 << bus);          // send uint8_t to select bus
@@ -1274,23 +1303,35 @@ void setupMPU6050(){
   mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);//Options 260/184/94/44/21/10/5
   mpu.setSampleRateDivisor(0); // Divides Gyro output rate by (Sample divisor + 1) to get sample rate
 }
-void find_down(float* vals, bool reset = 0){//This function was moved up here because it needs to be in-context of loop() since it takes in input
-  static int count = 0;
-  static float average[3] = {0,0,9.8};
+void get_mag_accel_samps(float* vals, bool reset = 0, bool mode = 0 /*0: accel samp, 1: mag samp*/){//This function was moved up here because it needs to be in-context of loop() since it takes in input
+  static int accel_count = 0;
+  static int mag_count = 0;
+  static float accel_avg[3] = {0,0,9.8};
+  static float mag_avg[3] = {0,0,0};
   static int start_time = 0;
   if(reset){
     count = 0;
-    average[0] = 0;average[1] = 0; average[2] = 9.8;
+    accel_avg[0] = 0;accel_avg[1] = 0; accel_avg[2] = 9.8;
+    mag_avg[0] = 0;mag_avg[1] = 0; mag_avg[2] = 0;
     start_time = millis();
-  }else if(millis()-start_time < 1000){//Only sample for 1000ms
-    average[0] = (average[0]*count + vals[0])/(count+1);
-    average[1] = (average[1]*count + vals[1])/(count+1);
-    average[2] = (average[2]*count + vals[2])/(count+1);
-    count++;
+  }else if(millis()-start_time < 1000 && !mode){//Only sample for 1000ms
+    accel_avg[0] = (accel_avg[0]*accel_count + vals[0])/(accel_count+1);
+    accel_avg[1] = (accel_avg[1]*accel_count + vals[1])/(accel_count+1);
+    accel_avg[2] = (accel_avg[2]*accel_count + vals[2])/(accel_count+1);
+    accel_count++;
+  }else if(millis()-start_time < 1000 && mode){//Only sample for 1000ms
+    mag_avg[0] = (mag_avg[0]*mag_count + vals[0])/(mag_count+1);
+    mag_avg[1] = (mag_avg[1]*mag_count + vals[1])/(mag_count+1);
+    mag_avg[2] = (mag_avg[2]*mag_count + vals[2])/(mag_count+1);
+    mag_count++;
   }else{
-    float mag = sqrt(pow(average[0],2) + pow(average[1],2) + pow(average[2],2));
-    rot_start[0] = std::atan(average[1]/average[2]);
-    rot_start[1] = std::asin(-average[0]/mag);
+    accel_start[0] = accel_avg[0];
+    accel_start[0] = accel_avg[1];
+    accel_start[2] = accel_avg[2];
+    mag_start[0] = mag_avg[0];
+    mag_start[0] = mag_avg[1];
+    mag_start[2] = mag_avg[2];
+    get_down_tonight(accel_start, mag_start);
   }
 }
 void readMPU6050(){    //Elizabeth McGhee
@@ -1324,8 +1365,8 @@ void readLSM() {  //Alleon Oxales
   LSM_AY = -LSM_acc.acceleration.x - 0.5102867812;
   LSM_AZ = LSM_acc.acceleration.z + 0.2804271845;
 
-  float temp[] = {LSM_AX,LSM_AY,LSM_AZ};
-  find_down(temp);//Using acceleration of gravity at the pad to determine orientation
+  float = temp[3] = {LSM_AX,LSM_AY,LSM_AZ};
+  get_mag_accel_samps(temp, 0, 0);//Start recording values to get gravity direction at pad;
 
   LSM_GX = -LSM_gyro.gyro.y - 0.000337512054;
   LSM_GY = -LSM_gyro.gyro.x + 0.02429604629;
@@ -1333,6 +1374,11 @@ void readLSM() {  //Alleon Oxales
   LSM_MX = -LSM_mag.magnetic.y;
   LSM_MY = -LSM_mag.magnetic.x;
   LSM_MZ = LSM_mag.magnetic.z;
+
+  temp[0] = LSM_AX;
+  temp[1] = LSM_AY;
+  temp[2] = LSM_AZ;
+  get_mag_accel_samps(temp, 0, 1);
   
   if(!errorCodes[SD_FAIL]){
     logfile.print(micros());
@@ -1515,7 +1561,7 @@ void commands(char command) {  //Alleon Oxales
           logfile.print('|');
           logfile.println(AoA_start2);
         }
-        find_down(0,1);
+        get_mag_accel_samps(0,1);
       }
       break;
     case 0x08:
@@ -1597,3 +1643,29 @@ long epoch() {
 
   return static_cast<long>(epochTime);
 }  // end epoch
+
+//=========MATH CODE==========
+float* cross_product(float* a, float* b){
+  float result[3] = {a[1]*b[2]-b[1]*a[2],-(a[0]*b[2]-b[0]*a[2]),a[0]*b[1]-b[0]*a[1]};
+}
+float vec_mag(float* a){
+  return sqrt(pow(a[0],2)+pow(a[1],2)+pow(a[2],2));
+}
+float dot_product(float* a, float* b){
+  return (a[0]*b[0]) + (a[1]*b[1]) + (a[2]*b[2]);
+}
+float* quat_mul(float* a, float* b){
+  float result[4] {
+    (a[0]*b[0]) - (a[1]*b[1]) - (a[2]*b[2]) - (a[3]*b[3]),
+    (a[0]*b[1]) + (a[1]*b[0]) + (a[2]*b[3]) - (a[3]*b[2]),
+    (a[0]*b[2]) - (a[1]*b[3]) + (a[2]*b[0]) + (a[3]*b[1]),
+    (a[0]*b[3]) + (a[1]*b[2]) - (a[2]*b[1]) + (a[3]*b[0])
+  };
+  return *result;
+}
+float* quat_rot(float* q, float* v){
+  float V[4] = {0,v[0],v[1],v[2]};
+  float* result = quat_mul(q,V);
+  float q_conj[4] = {q[0], -q[1], -q[2], -q[3]};
+  return quat_mul(result, q_conj) + 1;//Start the second element because that's where the juicy stuff is i.e. the actual rotated vector compponents
+}

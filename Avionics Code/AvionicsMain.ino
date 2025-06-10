@@ -31,7 +31,7 @@ https://docs.google.com/spreadsheets/d/1Gov30G9uyXv7lDdadh1TLPG05m9mBo-JQmem5j_y
 #include <EEPROM.h>
 #include <uRTCLib.h>  //Include Real Time Clock Library
 #include <time.h>
-// #include "kalman_filter.h"
+#include "kalman_filter.h"
 using namespace std;
 
 uRTCLib rtc(0x68);  //Real time clock I2C address
@@ -123,6 +123,10 @@ int time_vid_off = 0;
 int shutdownCheck[3] = {0, 0, 0};  //All three elements must be >0 to activate shutdown
 int restartCheck[3] = {0, 0, 0}; //All three elements must be >0 to activate restart
 int time_last_command = 0;
+
+// Kalman Filter Objects
+runKFOrientation myObj;
+runKFIMU obj;
 
 int bitLengthList[10] = {
   12,  //Seconds since launch
@@ -347,17 +351,16 @@ void loop() {
       STATUS_LAST = 0;
     }
     
-    // runKalmanFilter filter;
-    obj.updateData(MPU_AX, LSM_AX, ADXL345_AX, MPU_AY, LSM_AY, ADXL345_AY, MPU_AZ, LSM_AZ, ADXL345_AZ, 
+      obj.updateData(MPU_AX, LSM_AX, ADXL345_AX, MPU_AY, LSM_AY, ADXL345_AY, MPU_AZ, LSM_AZ, ADXL345_AZ, 
                    MPU_GX, LSM_GX, MPU_GY, LSM_GY, MPU_GZ, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ);
    
-    obj.fuseDataAcceleration_and_Gyro();
-    obj.getFiltered();
+      obj.fuseDataAcceleration_and_Gyro();
+      obj.getFiltered();
 
-    myObj.updateData(MPU_AX, LSM_AX, ADXL345_AX, MPU_AY, LSM_AY, ADXL345_AY, MPU_AZ, LSM_AZ, ADXL345_AZ, 
+      myObj.updateData(MPU_AX, LSM_AX, ADXL345_AX, MPU_AY, LSM_AY, ADXL345_AY, MPU_AZ, LSM_AZ, ADXL345_AZ, 
                    MPU_GX, LSM_GX, MPU_GY, LSM_GY, MPU_GZ, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ);
-    myObj.update_state_transition();
-    myObj.getOrientation();
+      myObj.update_state_transition();
+      myObj.getOrientation();
 
     
     readRFD();
@@ -1243,9 +1246,10 @@ float velocity_magnitude(){
 }
 void get_down_tonight(float* accel_dir, float* mag_dir){
   //Step 1: get the quaternion needed to rotate our body up vector to the measured world up vector from gravity.
-  const float up[3] = {0,0,1};
-  const float north[3] = {1,0,0};
-  float* cross_1 = cross_product(up, accel_dir);
+  static float up[3] = {0,0,1};
+  static float north[3] = {1,0,0};
+  float cross_result[3];
+  float* cross_1 = cross_product(up, accel_dir, cross_result);
   float cross_1_mag = vec_mag(cross_1);
   float rot_vec[3] = {cross_1[0]/cross_1_mag,cross_1[1]/cross_1_mag,cross_1[2]/cross_1_mag};
   float theta_half = acos(dot_product(up,accel_dir)/vec_mag(accel_dir));
@@ -1261,12 +1265,14 @@ void get_down_tonight(float* accel_dir, float* mag_dir){
   };
   //Step 2: rotate the magnetometer vector by the quaternion
   float M[4] = {0,mag_proj[0],mag_proj[1],mag_proj[2]};
-  float* M_rot = quat_rot(quat1, M);
+  float my_rot[4];
+  float* M_rot = quat_rot(quat1, M, my_rot);
   //Step 3: get the quaternion needed to rotate body_x  (north) to measured north
   float theta_2_half = acos(dot_product(north,M_rot)/vec_mag(M_rot));
   float quat2[4] = {cos(theta_2_half),0,0,sin(theta_2_half)};
-  //Step 4: get final quaternion
-  float* result = quat_mul(quat1, quat2);
+  //Step 4: get final quaternion 
+  float quat[4];
+  float* result = quat_mul(quat1, quat2, quat);
   quat_start[0] = *(result); quat_start[1] = *(result+1); quat_start[2] = *(result+2); quat_start[3] = *(result+3);
 }
 // vector<double> quaternion_to_speed(double a, double b, double c, double d){
@@ -1310,7 +1316,8 @@ void get_mag_accel_samps(float* vals, bool reset = 0, bool mode = 0 /*0: accel s
   static float mag_avg[3] = {0,0,0};
   static int start_time = 0;
   if(reset){
-    count = 0;
+    accel_count = 0;
+    mag_count = 0;
     accel_avg[0] = 0;accel_avg[1] = 0; accel_avg[2] = 9.8;
     mag_avg[0] = 0;mag_avg[1] = 0; mag_avg[2] = 0;
     start_time = millis();
@@ -1365,7 +1372,7 @@ void readLSM() {  //Alleon Oxales
   LSM_AY = -LSM_acc.acceleration.x - 0.5102867812;
   LSM_AZ = LSM_acc.acceleration.z + 0.2804271845;
 
-  float = temp[3] = {LSM_AX,LSM_AY,LSM_AZ};
+  float temp[3] = {LSM_AX,LSM_AY,LSM_AZ};
   get_mag_accel_samps(temp, 0, 0);//Start recording values to get gravity direction at pad;
 
   LSM_GX = -LSM_gyro.gyro.y - 0.000337512054;
@@ -1645,28 +1652,34 @@ long epoch() {
 }  // end epoch
 
 //=========MATH CODE==========
-float* cross_product(float* a, float* b){
-  float result[3] = {a[1]*b[2]-b[1]*a[2],-(a[0]*b[2]-b[0]*a[2]),a[0]*b[1]-b[0]*a[1]};
+float* cross_product(float* a, float* b, float* result){
+  result[0] = a[1]*b[2]-b[1]*a[2];
+  result[1] = -(a[0]*b[2]-b[0]*a[2]);
+  result[2] = a[0]*b[1]-b[0]*a[1];
   return result;
 }
+
 float vec_mag(float* a){
   return sqrt(pow(a[0],2)+pow(a[1],2)+pow(a[2],2));
 }
 float dot_product(float* a, float* b){
   return (a[0]*b[0]) + (a[1]*b[1]) + (a[2]*b[2]);
 }
-float* quat_mul(float* a, float* b){
-  float result[4] {
-    (a[0]*b[0]) - (a[1]*b[1]) - (a[2]*b[2]) - (a[3]*b[3]),
-    (a[0]*b[1]) + (a[1]*b[0]) + (a[2]*b[3]) - (a[3]*b[2]),
-    (a[0]*b[2]) - (a[1]*b[3]) + (a[2]*b[0]) + (a[3]*b[1]),
-    (a[0]*b[3]) + (a[1]*b[2]) - (a[2]*b[1]) + (a[3]*b[0])
-  };
+float* quat_mul(float* a, float* b, float* result){
+  result[0] = (a[0]*b[0]) - (a[1]*b[1]) - (a[2]*b[2]) - (a[3]*b[3]);
+  result[1] = (a[0]*b[1]) + (a[1]*b[0]) + (a[2]*b[3]) - (a[3]*b[2]);
+  result[2] = (a[0]*b[2]) - (a[1]*b[3]) + (a[2]*b[0]) + (a[3]*b[1]);
+  result[3] = (a[0]*b[3]) + (a[1]*b[2]) - (a[2]*b[1]) + (a[3]*b[0]);
   return result;
-}
-float* quat_rot(float* q, float* v){
+  };
+ 
+float* quat_rot(float* q, float* v, float my_result[4]){
   float V[4] = {0,v[0],v[1],v[2]};
-  float* result = quat_mul(q,V);
+  float my_arr[4];
+  float my_arr_mul[4];
+  float* result = quat_mul(q,V, my_arr);
   float q_conj[4] = {q[0], -q[1], -q[2], -q[3]};
-  return quat_mul(result, q_conj) + 1;//Start the second element because that's where the juicy stuff is i.e. the actual rotated vector compponents
-}
+  my_result = quat_mul(result, q_conj, my_arr_mul) + 1;
+  return my_result;
+   //Start the second element because that's where the juicy stuff is i.e. the actual rotated vector compponents
+  }

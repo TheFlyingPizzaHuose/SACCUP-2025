@@ -335,6 +335,11 @@ class runKFOrientation {
                                 {0,0.001,0,0},
                                 {0,0,0.001,0},
                                 {0,0,0,0.001}};
+    vector<vector<double>> x_loc = {{0},{0},{0},{0}};
+    vector<vector<double>> P_loc = {{0.001,0,0,0},
+                                      {0,0.001,0,0},
+                                      {0,0,0.001,0},
+                                      {0,0,0,0.001}};
 
     double gx, gy, gz;
 
@@ -365,7 +370,32 @@ class runKFOrientation {
       KalmanFilter myObj(A, H, Q, R);
       x = myObj.run_kalman_filter_covar(P, x, z);
       P = myObj.run_kalman_filter_covar(P, x, z);
-    }
+
+      vector<vector<double>> A_loc = {{1,0,0,0},
+                                      {0,1,0,0},
+                                      {0,0,1,0},
+                                      {0,0,0,1}};
+      vector<vector<double>> Q_loc = {{0.001,0,0,0},
+                                    {0,0.001,0,0},
+                                    {0,0,0.001,0},
+                                    {0,0,0,0.001}};
+      vector<vector<double>> H_loc = {{1,0,0,0}, 
+                                    {0,1,0,0},
+                                    {0,0,1,0},
+                                    {0,0,0,1}};
+      vector<vector<double>> R_loc = {{3,0,0,0},
+                                    {0,3,0,0},
+                                    {0,0,3,0},
+                                    {0,0,0,3}};
+
+      vector<vector<double>> z_loc = {{0},{0},{0},{0}};
+
+      KalmanFilter quat(A_loc, Q_loc, H_loc, R_loc);
+      x_loc = quat.run_kalman_filter_estimate(P_loc, x_loc, x);
+      P_loc = quat.run_kalman_filter_covar(P_loc, x_loc, x);
+
+      
+      }
 
 
 

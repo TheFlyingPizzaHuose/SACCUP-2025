@@ -1132,13 +1132,13 @@ void event_detection() {
    
   float burn = 684.276;  //We don't know this yet
   float g = 9.81;
-  double speed = velocityMagnitude();
+  double speed = velocity_magnitude();
   bool liftoff = ((LSM_AZ > 2*g && ADXL345_AZ > 2*g && MPU_AZ > 2*g) && (BMP280_ALT > 50 && BMP180_1_ALT > 50) && (speed > 20));
   bool burnout = ((LSM_AZ < 1*g && ADXL345_AZ < 1*g && MPU_AZ < 1*g) && (BMP280_ALT > burn && BMP180_1_ALT > burn));
   bool apogee = ((LSM_AX < 0 && LSM_AY < 0 && LSM_AZ < 0) && (MPU_GX < 0 && MPU_GY < 0 && MPU_GZ < 0));
   bool drogue_deploy = ((speed < 17.3736) && (apogee==1));
   bool main_deploy = ((BMP280_ALT < 457.2 && BMP180_1_ALT < 457.2) && (speed < 7.9248));
-  bool landed = (filter.state[5] < 5 && (BMP280_ALT < 50 && BMP180_1_ALT < 50));
+  bool landed = (speed < 5 && (BMP280_ALT < 50 && BMP180_1_ALT < 50));
 
   // The index is in the following ascending order: liftoff, burnout, apogee, drogue deploy, main deplot, landed
   if (liftoff) {

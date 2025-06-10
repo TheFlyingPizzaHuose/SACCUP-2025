@@ -348,16 +348,16 @@ void loop() {
     }
     
     // runKalmanFilter filter;
-    // float x_meters = lat_to_meters(GPS_LAT);
-    // float y_meters = lon_to_meters(GPS_LON);
-    
-  
-    // filter.updateData(x_meters, y_meters, BMP280_ALT, BMP180_1_ALT, BMP180_1_PRESS, BMP180_2_PRESS, BMP280_PRESS,
-    //   MPU_AX, MPU_AY, MPU_AZ, LSM_AX, LSM_AY, LSM_AZ, ADXL345_AX, ADXL345_AY, ADXL345_AZ, filter.state[12][0], filter.state[13][0],
-    //   filter.state[14][0], filter.state[15][0], LSM_GX, LSM_GY, LSM_GZ, MPU_GX, MPU_GY, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ);
-    // filter.updateStateTransition();
-    // filter.updateMeasurement();
-    // filter.updateState_and_Covar();
+    obj.updateData(MPU_AX, LSM_AX, ADXL345_AX, MPU_AY, LSM_AY, ADXL345_AY, MPU_AZ, LSM_AZ, ADXL345_AZ, 
+                   MPU_GX, LSM_GX, MPU_GY, LSM_GY, MPU_GZ, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ);
+   
+    obj.fuseDataAcceleration_and_Gyro();
+    obj.getFiltered();
+
+    myObj.updateData(MPU_AX, LSM_AX, ADXL345_AX, MPU_AY, LSM_AY, ADXL345_AY, MPU_AZ, LSM_AZ, ADXL345_AZ, 
+                   MPU_GX, LSM_GX, MPU_GY, LSM_GY, MPU_GZ, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ);
+    myObj.update_state_transition();
+    myObj.getOrientation();
 
     
     readRFD();

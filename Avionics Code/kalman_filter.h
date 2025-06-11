@@ -380,7 +380,7 @@ class runKFOrientation {
 
     }
     void update_state_transition(){
-      float t = 0.04;
+      float t = 0.0004;
       A = {{1,  -t/2 * gx, -t/2 * gy, -t/2 * gz},         
           {t/2 * gx, 1, t/2 * gz,  t/2 * gy},
           {t/2 * gy, -t/2 * gz, 1, t/2 * gx},

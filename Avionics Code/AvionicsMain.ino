@@ -351,12 +351,6 @@ void loop() {
       STATUS_LAST = 0;
     }
     
-      obj.updateData(MPU_AX, LSM_AX, ADXL345_AX, MPU_AY, LSM_AY, ADXL345_AY, MPU_AZ, LSM_AZ, ADXL345_AZ, 
-                   MPU_GX, LSM_GX, MPU_GY, LSM_GY, MPU_GZ, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ);
-   
-      obj.fuseDataAcceleration_and_Gyro();
-      obj.getFiltered();
-
       myObj.updateData(MPU_AX, LSM_AX, ADXL345_AX, MPU_AY, LSM_AY, ADXL345_AY, MPU_AZ, LSM_AZ, ADXL345_AZ, 
                    MPU_GX, LSM_GX, MPU_GY, LSM_GY, MPU_GZ, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ);
       myObj.update_state_transition();

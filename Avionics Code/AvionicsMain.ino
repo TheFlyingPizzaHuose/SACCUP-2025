@@ -31,7 +31,6 @@ https://docs.google.com/spreadsheets/d/1Gov30G9uyXv7lDdadh1TLPG05m9mBo-JQmem5j_y
 #include <EEPROM.h>
 #include <uRTCLib.h>  //Include Real Time Clock Library
 #include <time.h>
-#include "kalman_filter.h"
 using namespace std;
 
 uRTCLib rtc(0x68);  //Real time clock I2C address
@@ -124,9 +123,6 @@ int shutdownCheck[3] = {0, 0, 0};  //All three elements must be >0 to activate s
 int restartCheck[3] = {0, 0, 0}; //All three elements must be >0 to activate restart
 int time_last_command = 0;
 
-// Kalman Filter Objects
-runKFOrientation myObj;
-runKFIMU obj;
 
 int bitLengthList[10] = {
   12,  //Seconds since launch
@@ -271,7 +267,7 @@ float position[3] = { 0, 0, 0 },  //Absolute position measurements
 
 void setup() {
   Serial.begin(57600);    // Start hardware serial communication (for debugging)
-  rfSerial.begin(115200);  //Init RFD UART
+  rfSerial.begin(57600);  //Init RFD UART
 
   if(SRC_SRSR != 1){setErr(PRGM_ERR);}// Read reset status register and PRGM_ERR if reset is not a power cycle
   //RFM9x start
@@ -351,11 +347,6 @@ void loop() {
       STATUS_LAST = 0;
     }
     
-      myObj.updateData(MPU_AX, LSM_AX, ADXL345_AX, MPU_AY, LSM_AY, ADXL345_AY, MPU_AZ, LSM_AZ, ADXL345_AZ, 
-                   MPU_GX, LSM_GX, MPU_GY, LSM_GY, MPU_GZ, MPU_GZ, LSM_MX, LSM_MY, LSM_MZ);
-      myObj.update_state_transition();
-      myObj.getOrientation();
-
     
     readRFD();
     readRFM();
